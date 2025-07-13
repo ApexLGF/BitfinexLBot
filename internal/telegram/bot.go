@@ -10,10 +10,10 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/bitfinex"
-	"github.com/kfrico/BitfinexLendingBot/internal/config"
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
-	"github.com/kfrico/BitfinexLendingBot/internal/rates"
+	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+	"github.com/ApexLGF/BitfinexLBot/internal/config"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/rates"
 )
 
 // LendingBot interface 用於避免循環依賴
