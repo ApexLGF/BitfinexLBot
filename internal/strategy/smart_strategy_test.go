@@ -1,11 +1,17 @@
 package strategy
 
 import (
+	"math"
 	"testing"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 	"github.com/ApexLGF/BitfinexLBot/internal/config"
 )
+
+// abs 返回浮点数的绝对值
+func abs(x float64) float64 {
+	return math.Abs(x)
+}
 
 func TestSmartStrategy_CalculateOptimalAllocation(t *testing.T) {
 	strategy := NewSmartStrategy(&config.Config{
@@ -74,10 +80,11 @@ func TestSmartStrategy_CalculateOptimalAllocation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			highHold, spread := strategy.calculateOptimalAllocation(tt.condition)
 
-			if highHold != tt.expectedHighHold {
+			tolerance := 1e-10 // 浮点数比较容忍度
+			if abs(highHold-tt.expectedHighHold) > tolerance {
 				t.Errorf("Expected highHold %f, got %f", tt.expectedHighHold, highHold)
 			}
-			if spread != tt.expectedSpread {
+			if abs(spread-tt.expectedSpread) > tolerance {
 				t.Errorf("Expected spread %f, got %f", tt.expectedSpread, spread)
 			}
 		})
