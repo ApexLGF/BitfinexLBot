@@ -10,8 +10,8 @@ import (
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
 	"github.com/bitfinexcom/bitfinex-api-go/v2/rest"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
-	"github.com/kfrico/BitfinexLendingBot/internal/errors"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 )
 
 // Client Bitfinex API 客戶端封裝
