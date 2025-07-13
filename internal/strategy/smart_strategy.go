@@ -4,9 +4,9 @@ import (
 	"log"
 	"math"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/bitfinex"
-	"github.com/kfrico/BitfinexLendingBot/internal/config"
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+	"github.com/ApexLGF/BitfinexLBot/internal/config"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 )
 
 // SmartStrategy 智能策略引擎
