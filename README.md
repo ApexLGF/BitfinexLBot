@@ -1,6 +1,6 @@
-# BitfinexLendingBot 綠葉放貸機器人
+# LGF 修改的BitfinexLBot 綠葉放貸機器人
 
-一個自動化的 Bitfinex 放貸機器人，支持智能策略、實時監控和 Telegram 通知。
+一個自動化的 Bitfinex 放貸機器人，支持智能策略、實時監控和 Telegram 通知。基于K的修改。
 
 ## ✨ 主要功能
 
