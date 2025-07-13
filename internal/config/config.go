@@ -3,8 +3,8 @@ package config
 import (
 	"strings"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
-	"github.com/kfrico/BitfinexLendingBot/internal/errors"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 	"github.com/spf13/viper"
 )
 
