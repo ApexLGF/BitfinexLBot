@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/bitfinex"
+	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 )
 
 // MarketAnalyzer 市場分析器
