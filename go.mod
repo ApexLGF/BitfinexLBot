@@ -1,4 +1,4 @@
-module github.com/kfrico/BitfinexLendingBot
+module github.com/ApexLGF/BitfinexLBot
 
 go 1.23.4
 
