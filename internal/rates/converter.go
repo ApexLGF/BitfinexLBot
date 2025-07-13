@@ -1,7 +1,7 @@
 package rates
 
 import (
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 )
 
 // Converter 利率轉換器
