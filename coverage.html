@@ -1,0 +1,4369 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>backup: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/ApexLGF/BitfinexLBot/backup/main_original.go (0.0%)</option>
+				
+				<option value="file1">github.com/ApexLGF/BitfinexLBot/internal/bitfinex/client.go (0.0%)</option>
+				
+				<option value="file2">github.com/ApexLGF/BitfinexLBot/internal/config/config.go (48.4%)</option>
+				
+				<option value="file3">github.com/ApexLGF/BitfinexLBot/internal/errors/errors.go (0.0%)</option>
+				
+				<option value="file4">github.com/ApexLGF/BitfinexLBot/internal/rates/converter.go (33.3%)</option>
+				
+				<option value="file5">github.com/ApexLGF/BitfinexLBot/internal/strategy/lending.go (0.0%)</option>
+				
+				<option value="file6">github.com/ApexLGF/BitfinexLBot/internal/strategy/market_analyzer.go (20.0%)</option>
+				
+				<option value="file7">github.com/ApexLGF/BitfinexLBot/internal/strategy/smart_strategy.go (75.0%)</option>
+				
+				<option value="file8">github.com/ApexLGF/BitfinexLBot/internal/telegram/bot.go (0.0%)</option>
+				
+				<option value="file9">github.com/ApexLGF/BitfinexLBot/internal/telegram/handlers.go (0.0%)</option>
+				
+				<option value="file10">github.com/ApexLGF/BitfinexLBot/main.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "fmt"
+        "log"
+        "math"
+        "os"
+        "strconv"
+        "strings"
+        "sync"
+        "time"
+
+        "github.com/bitfinexcom/bitfinex-api-go/pkg/models/book"
+        "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
+        "github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
+        "github.com/bitfinexcom/bitfinex-api-go/v2/rest"
+        tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+        "github.com/spf13/viper"
+        "github.com/urfave/cli"
+)
+
+// envStruct 儲存應用程式的環境變數設定
+type envStruct struct {
+        BitfinexApiKey                string  `mapstructure:"BITFINEX_API_KEY" json:"BITFINEX_API_KEY"`                                     // Bitfinex API 金鑰
+        BitfinexSecretKey             string  `mapstructure:"BITFINEX_SECRET_KEY" json:"BITFINEX_SECRET_KEY"`                               // Bitfinex API 密鑰
+        Currency                      string  `mapstructure:"CURRENCY" json:"CURRENCY"`                                                     // 交易幣種 (例如：USD, BTC, ETH)
+        OrderLimit                    int     `mapstructure:"ORDER_LIMIT" json:"ORDER_LIMIT"`                                               // 單次執行最大下單數量限制
+        MinutesRun                    int     `mapstructure:"MINUTES_RUN" json:"MINUTES_RUN"`                                               // 機器人執行間隔時間 (分鐘)
+        MinLoan                       float64 `mapstructure:"MIN_LOAN" json:"MIN_LOAN"`                                                     // 最小貸出金額
+        MaxLoan                       float64 `mapstructure:"MAX_LOAN" json:"MAX_LOAN"`                                                     // 最大貸出金額限制
+        MinDailyLendRate              float64 `mapstructure:"MIN_DAILY_LEND_RATE" json:"MIN_DAILY_LEND_RATE"`                               // 最低每日貸出利率
+        SpreadLend                    int     `mapstructure:"SPREAD_LEND" json:"SPREAD_LEND"`                                               // 資金分散貸出的筆數
+        GapBottom                     float64 `mapstructure:"GAP_BOTTOM" json:"GAP_BOTTOM"`                                                 // 利率階梯的底部區間
+        GapTop                        float64 `mapstructure:"GAP_TOP" json:"GAP_TOP"`                                                       // 利率階梯的頂部區間
+        ThirtyDayLendRateThreshold    float64 `mapstructure:"THIRTY_DAY_LEND_RATE_THRESHOLD" json:"THIRTY_DAY_LEND_RATE_THRESHOLD"`         // 觸發30天期貸出的日利率閾值
+        OneTwentyDayLendRateThreshold float64 `mapstructure:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD" json:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD"` // 觸發120天期貸出的日利率閾值
+        HighHoldRate                  float64 `mapstructure:"HIGH_HOLD_RATE" json:"HIGH_HOLD_RATE"`                                         // 高額持有策略的日利率
+        HighHoldAmount                float64 `mapstructure:"HIGH_HOLD_AMOUNT" json:"HIGH_HOLD_AMOUNT"`                                     // 高額持有策略的金額
+        HighHoldOrders                int     `mapstructure:"HIGH_HOLD_ORDERS" json:"HIGH_HOLD_ORDERS"`                                     // 高額持有策略的訂單數量
+        RateBonus                     float64 `mapstructure:"RATE_BONUS" json:"RATE_BONUS"`                                                 // 無掛單時的利率加成
+        TelegramBotToken              string  `mapstructure:"TELEGRAM_BOT_TOKEN" json:"TELEGRAM_BOT_TOKEN"`                                 // Telegram 機器人 Token
+        TelegramAuthToken             string  `mapstructure:"TELEGRAM_AUTH_TOKEN" json:"TELEGRAM_AUTH_TOKEN"`                               // Telegram 驗證 Token
+        NotifyRateThreshold           float64 `mapstructure:"NOTIFY_RATE_THRESHOLD" json:"NOTIFY_RATE_THRESHOLD"`                           // 利率通知閾值
+        ReserveAmount                 float64 `mapstructure:"RESERVE_AMOUNT" json:"RESERVE_AMOUNT"`                                         // 保留金額，不參與借貸
+}
+
+var (
+        env    envStruct
+        client *rest.Client
+        bot    *tgbotapi.BotAPI
+)
+
+// MarginBotConf 設定機器人運作參數
+type MarginBotConf struct {
+        MinDailyLendRate              float64
+        SpreadLend                    int
+        GapBottom                     float64
+        GapTop                        float64
+        ThirtyDayLendRateThreshold    float64
+        OneTwentyDayLendRateThreshold float64
+        HighHoldRate                  float64
+        HighHoldAmount                float64
+        HighHoldOrders                int
+        MinLoan                       float64
+        MaxLoan                       float64
+}
+
+// MarginBotLoanOffer 貸出訂單資訊
+type MarginBotLoanOffer struct {
+        Amount float64
+        Rate   float64
+        Period int
+}
+
+// MarginBotLoanOffers 多筆貸出訂單陣列
+type MarginBotLoanOffers []MarginBotLoanOffer
+
+// 全局驗證映射表改為單一聊天ID
+var authenticatedChatID int64
+var chatIDMutex sync.Mutex
+
+func main() <span class="cov0" title="0">{
+        app := cli.NewApp()
+        app.Name = "bitfindex-bot"
+        app.Version = "v0.0.1"
+
+        // 設定 CLI 參數
+        app.Flags = []cli.Flag{
+                cli.StringFlag{
+                        Name:   "config, c",
+                        Value:  "config.yaml",
+                        Usage:  "app config",
+                        EnvVar: "CONFIG_PATH",
+                },
+        }
+
+        app.Action = runApp
+
+        // 執行 CLI
+        if err := app.Run(os.Args); err != nil </span><span class="cov0" title="0">{
+                panic(err)</span>
+        }
+}
+
+// runApp 為主要的執行流程
+func runApp(c *cli.Context) <span class="cov0" title="0">{
+        loadConfig(c.String("config"))
+        initBitfinexClient()
+        initTelegramBot()
+
+        go handleTelegramMessages()
+
+        // 啟動每小時06分的貸出利率檢查
+        go scheduleHourlyTask(6, checkLendRate)
+
+        log.Println("ENV:", env)
+        log.Println("Config 設定成功")
+
+        fmt.Println("Scheduler started at:", time.Now())
+        scheduleTask(env.MinutesRun, botRun)
+
+        select </span>{} // 阻塞主程式，使其持續執行
+}
+
+// loadConfig 讀取並解析設定檔案及環境變數
+func loadConfig(configPath string) <span class="cov0" title="0">{
+        viper.SetConfigFile(configPath)
+        viper.AutomaticEnv()
+
+        if err := viper.ReadInConfig(); err != nil </span><span class="cov0" title="0">{
+                panic(err)</span>
+        }
+
+        <span class="cov0" title="0">if err := viper.Unmarshal(&amp;env); err != nil </span><span class="cov0" title="0">{
+                panic(err)</span>
+        }
+}
+
+// initBitfinexClient 初始化 Bitfinex 客戶端
+func initBitfinexClient() <span class="cov0" title="0">{
+        client = rest.NewClient().Credentials(env.BitfinexApiKey, env.BitfinexSecretKey)
+}</span>
+
+// initTelegramBot 初始化 Telegram bot 客戶端
+func initTelegramBot() <span class="cov0" title="0">{
+        var err error
+        bot, err = tgbotapi.NewBotAPI(env.TelegramBotToken)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Panic(err)
+        }</span>
+
+        <span class="cov0" title="0">log.Printf("Authorized on account %s", bot.Self.UserName)</span>
+}
+
+// scheduleTask 定時執行任務，每 n 分鐘執行一次
+func scheduleTask(minutes int, task func()) <span class="cov0" title="0">{
+        // 先執行第一次
+        task()
+
+        ticker := time.NewTicker(time.Duration(minutes) * time.Minute)
+        defer ticker.Stop()
+
+        for range ticker.C </span><span class="cov0" title="0">{
+                task()
+        }</span>
+}
+
+// scheduleHourlyTask 在每小時的指定分鐘執行任務
+func scheduleHourlyTask(minute int, task func()) <span class="cov0" title="0">{
+        for </span><span class="cov0" title="0">{
+                now := time.Now()
+                next := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), minute, 0, 0, now.Location())
+                if now.After(next) || now.Equal(next) </span><span class="cov0" title="0">{
+                        next = next.Add(time.Hour)
+                }</span>
+
+                <span class="cov0" title="0">delay := next.Sub(now)
+                log.Printf("下次執行時間: %s, 等待時間: %s", next.Format("2006-01-02 15:04:05"), delay)
+
+                time.Sleep(delay)
+                task()</span>
+        }
+}
+
+// botRun 執行機器人主程式邏輯
+func botRun() <span class="cov0" title="0">{
+        fmt.Println("取消所有未完成訂單...")
+        hasPendingOrders := cancelAllOffers()
+
+        // 暫停幾秒避免取消訂單的金額還沒歸還
+        time.Sleep(5 * time.Second)
+
+        fmt.Println("取得可用額度...")
+        fundsAvailable, err := getAvailableFunds(env.Currency)
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Println("取得餘額錯誤:", err)
+                return
+        }</span>
+        <span class="cov0" title="0">fmt.Printf("Currency: %s  Available: %f \n", env.Currency, fundsAvailable)
+
+        // 扣除保留金額
+        if env.ReserveAmount &gt; 0 </span><span class="cov0" title="0">{
+                fundsAvailable = math.Max(0, fundsAvailable-env.ReserveAmount)
+                fmt.Printf("扣除保留金額後可用: %f \n", fundsAvailable)
+        }</span>
+
+        // 若扣除保留金額後可用資金小於最小貸出額，則不進行操作
+        <span class="cov0" title="0">if fundsAvailable &lt; env.MinLoan </span><span class="cov0" title="0">{
+                fmt.Println("可用資金小於最小貸出額，不進行操作")
+                return
+        }</span>
+
+        // 取得目前 Funding Book (Lendbook)
+        <span class="cov0" title="0">fundingSymbol := "f" + strings.ToUpper(env.Currency)                         // 轉換為 funding symbol (例如：fUSD)
+        lendbook, err := client.Book.All(fundingSymbol, common.PrecisionRawBook, 25) // 使用 R0 精度和默認價格水平
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Println("取得 Funding Book 錯誤:", err)
+                return
+        }</span>
+
+        // 依據機器人邏輯配置，算出要下單的貸出列表
+        <span class="cov0" title="0">loanOffers := marginBotGetLoanOffers(
+                fundsAvailable,
+                lendbook,
+                MarginBotConf{
+                        MinDailyLendRate:              env.MinDailyLendRate,
+                        SpreadLend:                    env.SpreadLend,
+                        GapBottom:                     env.GapBottom,
+                        GapTop:                        env.GapTop,
+                        ThirtyDayLendRateThreshold:    env.ThirtyDayLendRateThreshold,
+                        OneTwentyDayLendRateThreshold: env.OneTwentyDayLendRateThreshold,
+                        HighHoldRate:                  env.HighHoldRate,
+                        HighHoldAmount:                env.HighHoldAmount,
+                        HighHoldOrders:                env.HighHoldOrders,
+                        MinLoan:                       env.MinLoan,
+                        MaxLoan:                       env.MaxLoan,
+                },
+        )
+
+        // 依照算出的貸出訂單逐筆下單，且控制在 OrderLimit 以內
+        placeLoanOffers(loanOffers, env.OrderLimit, hasPendingOrders)</span>
+}
+
+// cancelAllOffers 取消所有未完成訂單
+func cancelAllOffers() (hasPendingOrders bool) <span class="cov0" title="0">{
+        hasPendingOrders = false
+
+        fundingSymbol := "f" + strings.ToUpper(env.Currency) // 轉換為 funding symbol
+        offers, err := client.Funding.Offers(fundingSymbol)
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Println("取得未完成訂單失敗:", err)
+                return hasPendingOrders
+        }</span>
+
+        // 檢查是否有訂單數據
+        <span class="cov0" title="0">if offers != nil &amp;&amp; len(offers.Snapshot) &gt; 0 </span><span class="cov0" title="0">{
+                for _, offer := range offers.Snapshot </span><span class="cov0" title="0">{
+                        hasPendingOrders = true
+
+                        // 取消訂單
+                        cancelReq := &amp;fundingoffer.CancelRequest{
+                                ID: offer.ID,
+                        }
+                        _, err := client.Funding.CancelOffer(cancelReq)
+                        if err != nil </span><span class="cov0" title="0">{
+                                fmt.Println("取消訂單失敗:", err)
+                        }</span> else<span class="cov0" title="0"> {
+                                fmt.Printf("成功取消訂單 ID: %d\n", offer.ID)
+                        }</span>
+                }
+        } else<span class="cov0" title="0"> {
+                fmt.Println("目前沒有未完成的訂單")
+        }</span>
+
+        <span class="cov0" title="0">return hasPendingOrders</span>
+}
+
+// getAvailableFunds 取得指定幣別的可用餘額
+func getAvailableFunds(currency string) (float64, error) <span class="cov0" title="0">{
+        wallets, err := client.Wallet.Wallet()
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+
+        // 在 v2 API 中，我們需要尋找 funding 錢包類型
+        <span class="cov0" title="0">for _, wallet := range wallets.Snapshot </span><span class="cov0" title="0">{
+                if wallet.Currency == strings.ToUpper(currency) &amp;&amp; wallet.Type == "funding" </span><span class="cov0" title="0">{
+                        return wallet.BalanceAvailable, nil
+                }</span>
+        }
+        <span class="cov0" title="0">return 0, nil</span>
+}
+
+// placeLoanOffers 依照產生的貸出訂單陣列逐筆下單
+func placeLoanOffers(loanOffers MarginBotLoanOffers, orderLimit int, hasPendingOrders bool) <span class="cov0" title="0">{
+        orderCount := 0
+        for _, o := range loanOffers </span><span class="cov0" title="0">{
+                if orderLimit != 0 &amp;&amp; orderCount &gt;= orderLimit </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                <span class="cov0" title="0">if !hasPendingOrders </span><span class="cov0" title="0">{
+                        o.Rate = (o.Rate/365 + env.RateBonus) * 365
+                }</span>
+
+                <span class="cov0" title="0">fmt.Printf("下單 =&gt; Rate: %.6f, Amount: %.4f, Period: %d \n", o.Rate/365, o.Amount, o.Period)
+
+                // 創建 funding offer 請求
+                fundingSymbol := "f" + strings.ToUpper(env.Currency)
+                offerReq := &amp;fundingoffer.SubmitRequest{
+                        Type:   "LIMIT",
+                        Symbol: fundingSymbol,
+                        Amount: o.Amount,
+                        Rate:   o.Rate / 365, // v2 API 使用日利率
+                        Period: int64(o.Period),
+                        Hidden: false,
+                }
+
+                _, err := client.Funding.SubmitOffer(offerReq)
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Println("下訂單失敗:", err)
+                }</span> else<span class="cov0" title="0"> {
+                        orderCount++
+                }</span>
+        }
+}
+
+// marginBotGetLoanOffers 計算並生成貸出訂單清單
+func marginBotGetLoanOffers(
+        fundsAvailable float64,
+        lendbook *book.Snapshot,
+        conf MarginBotConf,
+) (loanOffers MarginBotLoanOffers) <span class="cov0" title="0">{
+
+        // 如果可用資金小於最小貸出額，則不進行操作
+        if fundsAvailable &lt; conf.MinLoan </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        // 初始化可分配資金
+        <span class="cov0" title="0">splitFundsAvailable := fundsAvailable
+
+        // 高持有策略: 若 HighHoldAmount 大於最小貸出額，則執行高額持有策略
+        if conf.HighHoldAmount &gt; conf.MinLoan </span><span class="cov0" title="0">{
+                // 檢查高額持有訂單數量設定
+                ordersCount := conf.HighHoldOrders
+                if ordersCount &lt;= 0 </span><span class="cov0" title="0">{
+                        ordersCount = 1 // 如果未設置訂單數量或無效值，則默認為 1 筆
+                }</span>
+
+                // 訂單金額
+                <span class="cov0" title="0">highHold := conf.HighHoldAmount
+
+                // 若設定了 MaxLoan，且 highHold 大於 MaxLoan，則裁切為 MaxLoan
+                if conf.MaxLoan &gt; 0 &amp;&amp; highHold &gt; conf.MaxLoan </span><span class="cov0" title="0">{
+                        highHold = conf.MaxLoan
+                }</span>
+
+                // 創建多筆相同金額的高額持有訂單
+                // 計算實際可以創建的訂單數量（基於可用資金）
+                <span class="cov0" title="0">possibleOrders := int(splitFundsAvailable / highHold)
+                actualOrders := math.Min(float64(ordersCount), float64(possibleOrders))
+
+                // 下訂單
+                for i := 0; i &lt; int(actualOrders); i++ </span><span class="cov0" title="0">{
+                        // 確保每筆金額不超過剩餘資金
+                        if splitFundsAvailable &lt; highHold </span><span class="cov0" title="0">{
+                                break</span>
+                        }
+
+                        // 創建訂單
+                        <span class="cov0" title="0">tmp := MarginBotLoanOffer{
+                                Amount: highHold,
+                                Rate:   conf.HighHoldRate / 100 * 365, // 配置文件中是百分比，轉換為年化利率
+                                Period: 120,                           // 固定貸出 120 天
+                        }
+                        loanOffers = append(loanOffers, tmp)
+                        splitFundsAvailable -= highHold</span>
+                }
+        }
+
+        // 分割資金成多筆貸出
+        <span class="cov0" title="0">numSplits := conf.SpreadLend
+        if numSplits &lt;= 0 || splitFundsAvailable &lt; conf.MinLoan </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        // 計算每筆貸出金額 (初始)
+        <span class="cov0" title="0">amtEach := splitFundsAvailable / float64(numSplits)
+        amtEach = float64(int64(amtEach*100)) / 100.0 // 保留小數點後兩位
+
+        // 若每筆金額小於最小貸出額，嘗試調降分割數
+        for amtEach &lt;= conf.MinLoan &amp;&amp; numSplits &gt; 1 </span><span class="cov0" title="0">{
+                numSplits--
+                amtEach = splitFundsAvailable / float64(numSplits)
+                amtEach = float64(int64(amtEach*100)) / 100.0
+        }</span>
+        <span class="cov0" title="0">if numSplits &lt;= 0 </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        // 計算利率遞增量
+        <span class="cov0" title="0">gapClimb := (conf.GapTop - conf.GapBottom) / float64(numSplits)
+        nextLend := conf.GapBottom
+
+        // 以市場深度遍歷，計算對應利率
+        depthIndex := 0
+
+        for numSplits &gt; 0 </span><span class="cov0" title="0">{
+                // 累計市場量至指定利率區間
+                for float64(depthIndex) &lt; nextLend &amp;&amp; depthIndex &lt; len(lendbook.Snapshot)-1 </span><span class="cov0" title="0">{
+                        depthIndex++
+                }</span>
+
+                <span class="cov0" title="0">tmp := MarginBotLoanOffer{}
+
+                // 依照計算出的 amtEach 與 MaxLoan 進行裁切
+                allocAmount := amtEach
+                // 若有設定 MaxLoan，且 allocAmount 大於 MaxLoan，則調整為 MaxLoan
+                if conf.MaxLoan &gt; 0 &amp;&amp; allocAmount &gt; conf.MaxLoan </span><span class="cov0" title="0">{
+                        allocAmount = conf.MaxLoan
+                }</span>
+                <span class="cov0" title="0">tmp.Amount = allocAmount
+
+                // 若計算後的金額仍小於 MinLoan, 則不需要下單
+                if tmp.Amount &lt; conf.MinLoan </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                // 依據市場利率 vs 最低日利率
+                // 在 v2 API 中，book.Book.Rate 已經是日利率
+                <span class="cov0" title="0">dailyRate := lendbook.Snapshot[depthIndex].Rate
+                minDailyRate := conf.MinDailyLendRate / 100 // 配置文件中是百分比
+                if dailyRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                        tmp.Rate = minDailyRate * 365 // 儲存為年化利率以保持兼容性
+                }</span> else<span class="cov0" title="0"> {
+                        tmp.Rate = dailyRate * 365 // 轉換為年化利率以保持兼容性
+                }</span>
+
+                <span class="cov0" title="0">if conf.OneTwentyDayLendRateThreshold &gt; 0 &amp;&amp; tmp.Rate &gt;= (conf.OneTwentyDayLendRateThreshold/100)*365 </span><span class="cov0" title="0">{
+                        tmp.Period = 120 // 若市場年化利率高於閾值，則將訂單期間設定為 120 天
+                }</span> else<span class="cov0" title="0"> if conf.ThirtyDayLendRateThreshold &gt; 0 &amp;&amp; tmp.Rate &gt;= (conf.ThirtyDayLendRateThreshold/100)*365 </span><span class="cov0" title="0">{
+                        tmp.Period = 30 // 若市場年化利率高於閾值，則將訂單期間設定為 30 天
+                }</span> else<span class="cov0" title="0"> {
+                        tmp.Period = 2 // 若市場年化利率低於閾值，則將訂單期間設定為 2 天
+                }</span>
+
+                <span class="cov0" title="0">loanOffers = append(loanOffers, tmp)
+                nextLend += gapClimb
+                numSplits--</span>
+        }
+
+        <span class="cov0" title="0">return</span>
+}
+
+func handleTelegramMessages() <span class="cov0" title="0">{
+        u := tgbotapi.NewUpdate(0)
+        u.Timeout = 60
+
+        updates, err := bot.GetUpdatesChan(u)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Panic(err)
+        }</span>
+
+        <span class="cov0" title="0">for update := range updates </span><span class="cov0" title="0">{
+                if update.Message == nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">chatID := update.Message.Chat.ID
+                text := update.Message.Text
+
+                // 處理身份驗證
+                isAuthenticated := getAuthenticatedChatID() == chatID
+
+                // 處理驗證過程
+                if text == "/auth" </span><span class="cov0" title="0">{
+                        msg := tgbotapi.NewMessage(chatID, "請輸入驗證 token：")
+                        bot.Send(msg)
+                        continue</span>
+                } else<span class="cov0" title="0"> if text == env.TelegramAuthToken </span><span class="cov0" title="0">{
+                        setAuthenticatedChatID(chatID)
+                        msg := tgbotapi.NewMessage(chatID, "驗證成功，現在可以傳送指令了")
+                        bot.Send(msg)
+                        continue</span>
+                } else<span class="cov0" title="0"> if !isAuthenticated </span><span class="cov0" title="0">{
+                        msg := tgbotapi.NewMessage(chatID, "請先進行驗證，輸入 /auth 開始驗證流程")
+                        bot.Send(msg)
+                        continue</span>
+                }
+
+                // 處理已驗證用戶的指令
+                <span class="cov0" title="0">switch </span>{
+                case text == "/help" || text == "/start":<span class="cov0" title="0">
+                        // 顯示幫助訊息
+                        helpText := `可用指令:
+/rate - 顯示當前貸出利率和閾值
+/check - 檢查貸出利率是否超過閾值
+/threshold [數值] - 設置利率通知閾值
+/reserve [數值] - 設置不參與借貸的保留金額
+/orderlimit [數值] - 設置單次執行最大下單數量限制
+/mindailylendrate [數值] - 設置最低每日貸出利率
+/highholdrate [數值] - 設置高額持有策略的日利率
+/highholdamount [數值] - 設置高額持有策略的金額
+/highholdorders [數值] - 設置高額持有策略的訂單數量
+/status - 顯示系統狀態
+/help - 顯示此幫助訊息
+/restart - 手動重新啟動，清除所有訂單，重新運行`
+                        msg := tgbotapi.NewMessage(chatID, helpText)
+                        bot.Send(msg)</span>
+
+                // 手動重新啟動，清除所有訂單，重新運行
+                case text == "/restart":<span class="cov0" title="0">
+                        botRun()
+                        msg := tgbotapi.NewMessage(chatID, "機器人已重新啟動，清除所有訂單，重新運行")
+                        bot.Send(msg)</span>
+                case text == "/rate":<span class="cov0" title="0">
+                        // 顯示當前貸出利率
+                        rate, err := getLendRate()
+                        if err != nil </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "取得貸出利率失敗")
+                                bot.Send(msg)
+                        }</span> else<span class="cov0" title="0"> {
+                                thresholdInfo := ""
+                                if env.NotifyRateThreshold &gt; 0 </span><span class="cov0" title="0">{
+                                        thresholdInfo = fmt.Sprintf("\n目前設定的閾值為: %.4f%%", env.NotifyRateThreshold)
+                                }</span>
+                                <span class="cov0" title="0">msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("目前貸出利率: %.4f%%%s", rate*100, thresholdInfo))
+                                bot.Send(msg)</span>
+                        }
+                case text == "/check":<span class="cov0" title="0">
+                        // 執行檢查並獲取結果
+                        rate, err := getLendRate()
+                        if err != nil </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "取得貸出利率失敗")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">log.Printf("手動檢查: 當前貸出利率: %.4f", rate)
+
+                        replyMsg := fmt.Sprintf("當前貸出利率: %.4f%%\n閾值: %.4f%%", rate*100, env.NotifyRateThreshold)
+
+                        if rate*100 &gt; env.NotifyRateThreshold </span><span class="cov0" title="0">{
+                                replyMsg += "\n⚠️ 注意: 當前利率已超過閾值!"
+                        }</span> else<span class="cov0" title="0"> {
+                                replyMsg += "\n✓ 當前利率低於閾值"
+                        }</span>
+
+                        <span class="cov0" title="0">msg := tgbotapi.NewMessage(chatID, replyMsg)
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/threshold "):<span class="cov0" title="0">
+                        // 設置閾值
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /threshold [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">threshold, err := strconv.ParseFloat(parts[1], 64)
+                        if err != nil || threshold &lt;= 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的正數值")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.NotifyRateThreshold = threshold
+
+                        // 理想情況下應該將新閾值保存到配置文件中
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("閾值已設定為: %.4f%%", threshold))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/reserve "):<span class="cov0" title="0">
+                        // 設置保留金額
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /reserve [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">reserve, err := strconv.ParseFloat(parts[1], 64)
+                        if err != nil || reserve &lt; 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的非負數值")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.ReserveAmount = reserve
+
+                        // 理想情況下應該將新保留金額保存到配置文件中
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("保留金額已設定為: %.2f", reserve))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/orderlimit "):<span class="cov0" title="0">
+                        // 設置單次執行最大下單數量限制
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /orderlimit [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">limit, err := strconv.Atoi(parts[1])
+                        if err != nil || limit &lt; 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的非負整數")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.OrderLimit = limit
+
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("單次執行最大下單數量限制已設定為: %d", limit))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/mindailylendrate "):<span class="cov0" title="0">
+                        // 設置最低每日貸出利率
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /mindailylendrate [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">rate, err := strconv.ParseFloat(parts[1], 64)
+                        if err != nil || rate &lt;= 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的正數值")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.MinDailyLendRate = rate
+
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("最低每日貸出利率已設定為: %.4f%%", rate))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/highholdrate "):<span class="cov0" title="0">
+                        // 設置高額持有策略的日利率
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /highholdrate [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">rate, err := strconv.ParseFloat(parts[1], 64)
+                        if err != nil || rate &lt;= 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的正數值")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.HighHoldRate = rate
+
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("高額持有策略的日利率已設定為: %.4f%%", rate))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/highholdamount "):<span class="cov0" title="0">
+                        // 設置高額持有策略的金額
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /highholdamount [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">amount, err := strconv.ParseFloat(parts[1], 64)
+                        if err != nil || amount &lt;= 0 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的正數值")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.HighHoldAmount = amount
+
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("高額持有策略的金額已設定為: %.2f", amount))
+                        bot.Send(msg)</span>
+
+                case strings.HasPrefix(text, "/highholdorders "):<span class="cov0" title="0">
+                        // 設置高額持有訂單數量
+                        parts := strings.Split(text, " ")
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "格式錯誤，請使用 /highholdorders [數值] 格式")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">orders, err := strconv.Atoi(parts[1])
+                        if err != nil || orders &lt; 1 </span><span class="cov0" title="0">{
+                                msg := tgbotapi.NewMessage(chatID, "請輸入有效的正整數")
+                                bot.Send(msg)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">env.HighHoldOrders = orders
+
+                        // 理想情況下應該將新設定保存到配置文件中
+                        msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("高額持有訂單數量已設定為: %d", orders))
+                        bot.Send(msg)</span>
+
+                case text == "/status":<span class="cov0" title="0">
+                        statusMsg := fmt.Sprintf("目前系統狀態正常\n幣種: %s\n最小貸出金額: %.2f\n最大貸出金額: %.2f", env.Currency, env.MinLoan, env.MaxLoan)
+
+                        // 添加保留金額信息
+                        if env.ReserveAmount &gt; 0 </span><span class="cov0" title="0">{
+                                statusMsg += fmt.Sprintf("\n保留金額: %.2f", env.ReserveAmount)
+                        }</span> else<span class="cov0" title="0"> {
+                                statusMsg += "\n未設置保留金額"
+                        }</span>
+
+                        // 添加機器人運行參數
+                        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n機器人運行參數:")
+                        statusMsg += fmt.Sprintf("\n單次執行最大下單數量限制: %d", env.OrderLimit)
+                        statusMsg += fmt.Sprintf("\n最低每日貸出利率: %.4f%%", env.MinDailyLendRate)
+
+                        // 添加高額持有策略信息
+                        statusMsg += fmt.Sprintf("\n\n高額持有策略:")
+                        if env.HighHoldAmount &gt; 0 </span><span class="cov0" title="0">{
+                                statusMsg += fmt.Sprintf("\n金額: %.2f", env.HighHoldAmount)
+                                statusMsg += fmt.Sprintf("\n日利率: %.4f%%", env.HighHoldRate)
+                                statusMsg += fmt.Sprintf("\n訂單數量: %d", env.HighHoldOrders)
+                        }</span> else<span class="cov0" title="0"> {
+                                statusMsg += "\n未啟用高額持有策略"
+                        }</span>
+
+                        <span class="cov0" title="0">msg := tgbotapi.NewMessage(chatID, statusMsg)
+                        bot.Send(msg)</span>
+
+                default:<span class="cov0" title="0">
+                        msg := tgbotapi.NewMessage(chatID, "無效的指令，輸入 /help 查看所有可用指令")
+                        bot.Send(msg)</span>
+                }
+        }
+}
+
+func getLendRate() (float64, error) <span class="cov0" title="0">{
+        // 在 v2 API 中，我們使用 funding book 來獲取當前利率
+        fundingSymbol := "f" + strings.ToUpper(env.Currency)
+        book, err := client.Book.All(fundingSymbol, common.PrecisionRawBook, 25) // 使用 R0 精度
+
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+
+        <span class="cov0" title="0">if len(book.Snapshot) == 0 </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("no funding book data available")
+        }</span>
+
+        // 取得第一個 ask (貸出) 利率
+        <span class="cov0" title="0">return book.Snapshot[0].Rate, nil</span>
+}
+
+// checkLendRate 檢查貸出利率是否超過閾值，並在超過時發送通知
+func checkLendRate() <span class="cov0" title="0">{
+        log.Println("定時檢查貸出利率...")
+
+        // 獲取當前貸出利率
+        rate, err := getLendRate()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("取得貸出利率失敗: %v", err)
+                return
+        }</span>
+
+        <span class="cov0" title="0">log.Printf("當前貸出利率: %.4f%%, 閾值: %.4f%%", rate*100, env.NotifyRateThreshold)
+
+        // 檢查是否需要發送通知
+        if rate*100 &gt; env.NotifyRateThreshold </span><span class="cov0" title="0">{
+                chatID := getAuthenticatedChatID()
+                if chatID == 0 </span><span class="cov0" title="0">{
+                        log.Println("尚未設定聊天ID，無法發送通知")
+                        return
+                }</span>
+
+                <span class="cov0" title="0">notifyMsg := fmt.Sprintf("⚠️ 定時檢查提醒: 目前貸出利率 %.4f%% 已超過閾值 %.4f%%", rate*100, env.NotifyRateThreshold)
+                msg := tgbotapi.NewMessage(chatID, notifyMsg)
+
+                if _, err := bot.Send(msg); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("發送 Telegram 通知失敗: %v", err)
+                }</span> else<span class="cov0" title="0"> {
+                        log.Printf("成功發送利率提醒至聊天ID: %d", chatID)
+                }</span>
+        } else<span class="cov0" title="0"> {
+                log.Println("當前利率低於閾值，無需發送通知")
+        }</span>
+}
+
+// setAuthenticatedChatID 設置已驗證的單一聊天ID
+func setAuthenticatedChatID(chatID int64) <span class="cov0" title="0">{
+        chatIDMutex.Lock()
+        authenticatedChatID = chatID
+        chatIDMutex.Unlock()
+}</span>
+
+// getAuthenticatedChatID 獲取已驗證的單一聊天ID
+func getAuthenticatedChatID() int64 <span class="cov0" title="0">{
+        chatIDMutex.Lock()
+        defer chatIDMutex.Unlock()
+
+        return authenticatedChatID
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package bitfinex
+
+import (
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "strings"
+
+        "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
+        "github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
+        "github.com/bitfinexcom/bitfinex-api-go/v2/rest"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+        "github.com/ApexLGF/BitfinexLBot/internal/errors"
+)
+
+// Client Bitfinex API 客戶端封裝
+type Client struct {
+        restClient *rest.Client
+}
+
+// NewClient 創建新的 Bitfinex 客戶端
+func NewClient(apiKey, secretKey string) *Client <span class="cov0" title="0">{
+        client := rest.NewClient().Credentials(apiKey, secretKey)
+        return &amp;Client{
+                restClient: client,
+        }
+}</span>
+
+// FundingOffer 代表一個資金貸出訂單
+type FundingOffer struct {
+        ID     int64
+        Amount float64
+        Rate   float64 // 日利率（小數格式）
+        Period int
+}
+
+// Wallet 代表錢包信息
+type Wallet struct {
+        Currency  string
+        Type      string
+        Balance   float64
+        Available float64
+}
+
+// FundingBookEntry 代表資金訂單簿條目
+type FundingBookEntry struct {
+        Rate   float64 // 日利率（小數格式）
+        Amount float64
+        Period int
+        Count  int
+}
+
+// FundingCredit 代表活躍的借貸訂單
+type FundingCredit struct {
+        ID         int64
+        Symbol     string
+        Amount     float64
+        Rate       float64 // 日利率（小數格式）
+        Period     int64   // 期間（天）
+        MTSCreated int64   // 創建時間戳（毫秒）
+        MTSOpened  int64   // 開始時間戳（毫秒）
+        Status     string  // 狀態
+}
+
+// Candle 代表 K 線數據
+type Candle struct {
+        MTS    int64   // 時間戳（毫秒）
+        Open   float64 // 開盤價
+        Close  float64 // 收盤價
+        High   float64 // 最高價
+        Low    float64 // 最低價
+        Volume float64 // 成交量
+}
+
+// GetFundingOffers 獲取未完成的資金貸出訂單
+func (c *Client) GetFundingOffers(symbol string) ([]*FundingOffer, error) <span class="cov0" title="0">{
+        offers, err := c.restClient.Funding.Offers(symbol)
+        if err != nil </span><span class="cov0" title="0">{
+                // 處理特殊的空響應錯誤
+                if strings.Contains(err.Error(), "data slice too short for funding offer") </span><span class="cov0" title="0">{
+                        return []*FundingOffer{}, nil
+                }</span>
+                <span class="cov0" title="0">return nil, errors.NewAPIError("failed to get funding offers", err)</span>
+        }
+
+        // 處理空響應或無數據的情況
+        <span class="cov0" title="0">if offers == nil || offers.Snapshot == nil || len(offers.Snapshot) == 0 </span><span class="cov0" title="0">{
+                return []*FundingOffer{}, nil
+        }</span>
+
+        <span class="cov0" title="0">result := make([]*FundingOffer, 0, len(offers.Snapshot))
+        for _, offer := range offers.Snapshot </span><span class="cov0" title="0">{
+                // 添加安全檢查，防止空數據導致panic
+                if offer == nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">result = append(result, &amp;FundingOffer{
+                        ID:     offer.ID,
+                        Amount: offer.Amount,
+                        Rate:   offer.Rate, // API 已返回日利率
+                        Period: int(offer.Period),
+                })</span>
+        }
+
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+// CancelFundingOffer 取消資金貸出訂單
+func (c *Client) CancelFundingOffer(offerID int64) error <span class="cov0" title="0">{
+        cancelReq := &amp;fundingoffer.CancelRequest{
+                ID: offerID,
+        }
+
+        _, err := c.restClient.Funding.CancelOffer(cancelReq)
+        if err != nil </span><span class="cov0" title="0">{
+                return errors.NewOrderError("failed to cancel funding offer", err)
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// SubmitFundingOffer 提交新的資金貸出訂單
+func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate float64, period int, hidden bool) error <span class="cov0" title="0">{
+        offerReq := &amp;fundingoffer.SubmitRequest{
+                Type:   constants.OfferTypeLIMIT,
+                Symbol: symbol,
+                Amount: amount,
+                Rate:   dailyRate, // v2 API 使用日利率
+                Period: int64(period),
+                Hidden: hidden,
+        }
+
+        _, err := c.restClient.Funding.SubmitOffer(offerReq)
+        if err != nil </span><span class="cov0" title="0">{
+                return errors.NewOrderError("failed to submit funding offer", err)
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// GetWallets 獲取錢包信息
+func (c *Client) GetWallets() ([]*Wallet, error) <span class="cov0" title="0">{
+        wallets, err := c.restClient.Wallet.Wallet()
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewAPIError("failed to get wallets", err)
+        }</span>
+
+        <span class="cov0" title="0">result := make([]*Wallet, 0, len(wallets.Snapshot))
+        for _, w := range wallets.Snapshot </span><span class="cov0" title="0">{
+                result = append(result, &amp;Wallet{
+                        Currency:  w.Currency,
+                        Type:      w.Type,
+                        Balance:   w.Balance,
+                        Available: w.BalanceAvailable,
+                })
+        }</span>
+
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+// GetFundingBalance 獲取指定幣種的資金錢包餘額
+func (c *Client) GetFundingBalance(currency string) (float64, error) <span class="cov0" title="0">{
+        wallets, err := c.GetWallets()
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+
+        <span class="cov0" title="0">for _, wallet := range wallets </span><span class="cov0" title="0">{
+                if wallet.Currency == currency &amp;&amp; wallet.Type == constants.WalletTypeFunding </span><span class="cov0" title="0">{
+                        return wallet.Available, nil
+                }</span>
+        }
+
+        <span class="cov0" title="0">return 0, nil</span>
+}
+
+// GetFundingBook 獲取資金訂單簿
+func (c *Client) GetFundingBook(symbol string, limit int) ([]*FundingBookEntry, error) <span class="cov0" title="0">{
+        if limit &gt; constants.MaxPriceLevels </span><span class="cov0" title="0">{
+                limit = constants.MaxPriceLevels
+        }</span>
+        <span class="cov0" title="0">if limit &lt;= 0 </span><span class="cov0" title="0">{
+                limit = constants.DefaultPriceLevels
+        }</span>
+
+        <span class="cov0" title="0">book, err := c.restClient.Book.All(symbol, common.PrecisionRawBook, limit)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewAPIError("failed to get funding book", err)
+        }</span>
+
+        <span class="cov0" title="0">if len(book.Snapshot) == 0 </span><span class="cov0" title="0">{
+                return []*FundingBookEntry{}, nil
+        }</span>
+
+        <span class="cov0" title="0">result := make([]*FundingBookEntry, 0, len(book.Snapshot))
+        for _, entry := range book.Snapshot </span><span class="cov0" title="0">{
+                result = append(result, &amp;FundingBookEntry{
+                        Rate:   entry.Rate, // API 已返回日利率
+                        Amount: entry.Amount,
+                        Period: int(entry.Period),
+                        Count:  int(entry.Count),
+                })
+        }</span>
+
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+// GetCurrentFundingRate 獲取當前資金利率（Flash Return Rate）
+func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) <span class="cov0" title="0">{
+        // 使用 ticker API 獲取真正的當前 funding rate (FRR)
+        url := fmt.Sprintf("https://api-pub.bitfinex.com/v2/ticker/%s", symbol)
+
+        resp, err := http.Get(url)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, errors.NewAPIError("failed to get funding ticker", err)
+        }</span>
+        <span class="cov0" title="0">defer resp.Body.Close()
+
+        if resp.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                return 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d", resp.StatusCode), nil)
+        }</span>
+
+        <span class="cov0" title="0">var tickerData []interface{}
+        if err := json.NewDecoder(resp.Body).Decode(&amp;tickerData); err != nil </span><span class="cov0" title="0">{
+                return 0, errors.NewAPIError("failed to decode ticker response", err)
+        }</span>
+
+        // 檢查響應數據格式
+        <span class="cov0" title="0">if len(tickerData) &lt; 2 </span><span class="cov0" title="0">{
+                return 0, errors.NewAPIError("invalid ticker response format", nil)
+        }</span>
+
+        // 對於 funding symbols，FRR (Flash Return Rate) 在索引 1
+        <span class="cov0" title="0">frr, ok := tickerData[1].(float64)
+        if !ok </span><span class="cov0" title="0">{
+                return 0, errors.NewAPIError("failed to parse FRR from ticker", nil)
+        }</span>
+
+        // FRR 已經是日利率格式
+        <span class="cov0" title="0">return frr, nil</span>
+}
+
+// GetFundingCredits 獲取活躍的借貸訂單
+func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) <span class="cov0" title="0">{
+        credits, err := c.restClient.Funding.Credits(symbol)
+        if err != nil </span><span class="cov0" title="0">{
+                // 處理特殊的空響應錯誤
+                if strings.Contains(err.Error(), "data slice too short") </span><span class="cov0" title="0">{
+                        return []*FundingCredit{}, nil
+                }</span>
+                <span class="cov0" title="0">return nil, errors.NewAPIError("failed to get funding credits", err)</span>
+        }
+
+        // 處理空響應或無數據的情況
+        <span class="cov0" title="0">if credits == nil || credits.Snapshot == nil || len(credits.Snapshot) == 0 </span><span class="cov0" title="0">{
+                return []*FundingCredit{}, nil
+        }</span>
+
+        <span class="cov0" title="0">result := make([]*FundingCredit, 0, len(credits.Snapshot))
+        for _, credit := range credits.Snapshot </span><span class="cov0" title="0">{
+                // 添加安全檢查，防止空數據導致panic
+                if credit == nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">result = append(result, &amp;FundingCredit{
+                        ID:         credit.ID,
+                        Symbol:     credit.Symbol,
+                        Amount:     credit.Amount,
+                        Rate:       credit.Rate, // API 已返回日利率
+                        Period:     credit.Period,
+                        MTSCreated: credit.MTSCreated,
+                        MTSOpened:  credit.MTSOpened,
+                        Status:     credit.Status,
+                })</span>
+        }
+
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+// GetFundingCandles 獲取資金 K 線數據
+func (c *Client) GetFundingCandles(symbol string, timeFrame string, limit int) ([]*Candle, error) <span class="cov0" title="0">{
+        // 構建 candle key，格式: trade:15m:fUSD:a30:p2:p30
+        candleKey := fmt.Sprintf("trade:%s:%s:a30:p2:p30", timeFrame, symbol)
+
+        // 構建 API URL
+        url := fmt.Sprintf("https://api-pub.bitfinex.com/v2/candles/%s/hist?limit=%d", candleKey, limit)
+
+        // 發送 HTTP 請求
+        resp, err := http.Get(url)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewAPIError("failed to get funding candles", err)
+        }</span>
+        <span class="cov0" title="0">defer resp.Body.Close()
+
+        if resp.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                return nil, errors.NewAPIError(fmt.Sprintf("API returned status code %d", resp.StatusCode), nil)
+        }</span>
+
+        // 解析響應
+        <span class="cov0" title="0">var rawData [][]interface{}
+        if err := json.NewDecoder(resp.Body).Decode(&amp;rawData); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewAPIError("failed to decode candles response", err)
+        }</span>
+
+        // 轉換為 Candle 結構
+        <span class="cov0" title="0">candles := make([]*Candle, 0, len(rawData))
+        for _, raw := range rawData </span><span class="cov0" title="0">{
+                if len(raw) != 6 </span><span class="cov0" title="0">{
+                        continue</span> // 跳過無效數據
+                }
+
+                // 安全地轉換每個字段
+                <span class="cov0" title="0">mts, ok := raw[0].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">open, ok := raw[1].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">close, ok := raw[2].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">high, ok := raw[3].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">low, ok := raw[4].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">volume, ok := raw[5].(float64)
+                if !ok </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">candle := &amp;Candle{
+                        MTS:    int64(mts),
+                        Open:   open,
+                        Close:  close,
+                        High:   high,
+                        Low:    low,
+                        Volume: volume,
+                }
+                candles = append(candles, candle)</span>
+        }
+
+        <span class="cov0" title="0">return candles, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package config
+
+import (
+        "strings"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+        "github.com/ApexLGF/BitfinexLBot/internal/errors"
+        "github.com/spf13/viper"
+)
+
+// Config 應用程式配置結構
+type Config struct {
+        // API 配置
+        BitfinexApiKey    string `mapstructure:"BITFINEX_API_KEY"`
+        BitfinexSecretKey string `mapstructure:"BITFINEX_SECRET_KEY"`
+
+        // 基本設定
+        Currency   string `mapstructure:"CURRENCY"`
+        OrderLimit int    `mapstructure:"ORDER_LIMIT"`
+        MinutesRun int    `mapstructure:"MINUTES_RUN"`
+
+        // 貸出限制
+        MinLoan float64 `mapstructure:"MIN_LOAN"`
+        MaxLoan float64 `mapstructure:"MAX_LOAN"`
+
+        // 利率策略
+        MinDailyLendRate              float64 `mapstructure:"MIN_DAILY_LEND_RATE"`
+        SpreadLend                    int     `mapstructure:"SPREAD_LEND"`
+        GapBottom                     float64 `mapstructure:"GAP_BOTTOM"`
+        GapTop                        float64 `mapstructure:"GAP_TOP"`
+        ThirtyDayLendRateThreshold    float64 `mapstructure:"THIRTY_DAY_LEND_RATE_THRESHOLD"`
+        OneTwentyDayLendRateThreshold float64 `mapstructure:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD"`
+        RateBonus                     float64 `mapstructure:"RATE_BONUS"`
+
+        // 高額持有策略
+        HighHoldRate   float64 `mapstructure:"HIGH_HOLD_RATE"`
+        HighHoldAmount float64 `mapstructure:"HIGH_HOLD_AMOUNT"`
+        HighHoldOrders int     `mapstructure:"HIGH_HOLD_ORDERS"`
+
+        // Telegram 設定
+        TelegramBotToken  string `mapstructure:"TELEGRAM_BOT_TOKEN"`
+        TelegramAuthToken string `mapstructure:"TELEGRAM_AUTH_TOKEN"`
+
+        // 通知設定
+        NotifyRateThreshold float64 `mapstructure:"NOTIFY_RATE_THRESHOLD"`
+        ReserveAmount       float64 `mapstructure:"RESERVE_AMOUNT"`
+
+        // 智能策略設定
+        EnableSmartStrategy      bool    `mapstructure:"ENABLE_SMART_STRATEGY"`
+        VolatilityThreshold      float64 `mapstructure:"VOLATILITY_THRESHOLD"`
+        MaxRateMultiplier        float64 `mapstructure:"MAX_RATE_MULTIPLIER"`
+        MinRateMultiplier        float64 `mapstructure:"MIN_RATE_MULTIPLIER"`
+        RateRangeIncreasePercent float64 `mapstructure:"RATE_RANGE_INCREASE_PERCENT"` // 利率範圍增加百分比
+
+        // K線策略設定
+        EnableKlineStrategy bool    `mapstructure:"ENABLE_KLINE_STRATEGY"` // 啟用K線策略
+        KlineTimeFrame      string  `mapstructure:"KLINE_TIME_FRAME"`      // K線時間框架，預設15m
+        KlinePeriod         int     `mapstructure:"KLINE_PERIOD"`          // K線週期數量，預設24（6小時）
+        KlineSpreadPercent  float64 `mapstructure:"KLINE_SPREAD_PERCENT"`  // K線最高點加成百分比，預設0%
+        KlineSmoothMethod   string  `mapstructure:"KLINE_SMOOTH_METHOD"`   // K線利率平滑方法：max, sma, ema, hla, p90
+
+        // 測試模式設定
+        TestMode bool `mapstructure:"TEST_MODE"`
+
+        // 借貸通知設定
+        LastLendingCheckTime int64 // 上次檢查借貸訂單的時間戳
+        LendingCheckMinutes  int   `mapstructure:"LENDING_CHECK_MINUTES"` // 借貸訂單檢查間隔（分鐘）
+}
+
+// LoadConfig 從文件加載配置
+func LoadConfig(configPath string) (*Config, error) <span class="cov1" title="1">{
+        viper.SetConfigFile(configPath)
+        viper.AutomaticEnv()
+
+        if err := viper.ReadInConfig(); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewConfigError("failed to read config file", err)
+        }</span>
+
+        <span class="cov1" title="1">var config Config
+        if err := viper.Unmarshal(&amp;config); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.NewConfigError("failed to unmarshal config", err)
+        }</span>
+
+        // 設置智能策略參數的預設值
+        <span class="cov1" title="1">config.setSmartStrategyDefaults()
+
+        // 設置K線策略參數的預設值
+        config.setKlineStrategyDefaults()
+
+        // 設置借貸檢查間隔的預設值
+        config.setLendingCheckDefaults()
+
+        if err := config.Validate(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov1" title="1">return &amp;config, nil</span>
+}
+
+// Validate 驗證配置有效性
+func (c *Config) Validate() error <span class="cov10" title="7">{
+        if c.BitfinexApiKey == "" || c.BitfinexApiKey == "your_api_key_here" </span><span class="cov4" title="2">{
+                return errors.NewValidationError("BITFINEX_API_KEY is required and must be set to your actual API key")
+        }</span>
+        <span class="cov8" title="5">if c.BitfinexSecretKey == "" || c.BitfinexSecretKey == "your_secret_key_here" </span><span class="cov0" title="0">{
+                return errors.NewValidationError("BITFINEX_SECRET_KEY is required and must be set to your actual secret key")
+        }</span>
+        <span class="cov8" title="5">if c.Currency == "" </span><span class="cov0" title="0">{
+                return errors.NewValidationError("CURRENCY is required")
+        }</span>
+        <span class="cov8" title="5">if c.MinLoan &lt;= 0 </span><span class="cov1" title="1">{
+                return errors.NewValidationError("MIN_LOAN must be positive")
+        }</span>
+        <span class="cov7" title="4">if c.MaxLoan &gt; 0 &amp;&amp; c.MaxLoan &lt; c.MinLoan </span><span class="cov1" title="1">{
+                return errors.NewValidationError("MAX_LOAN cannot be less than MIN_LOAN")
+        }</span>
+        <span class="cov6" title="3">if c.MinDailyLendRate &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.NewValidationError("MIN_DAILY_LEND_RATE must be positive")
+        }</span>
+        <span class="cov6" title="3">if c.SpreadLend &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.NewValidationError("SPREAD_LEND must be positive")
+        }</span>
+        <span class="cov6" title="3">if c.GapBottom &lt; 0 || c.GapTop &lt; 0 || c.GapTop &lt;= c.GapBottom </span><span class="cov0" title="0">{
+                return errors.NewValidationError("invalid GAP_BOTTOM or GAP_TOP values")
+        }</span>
+
+        // 驗證智能策略參數
+        <span class="cov6" title="3">if c.EnableSmartStrategy </span><span class="cov4" title="2">{
+                if c.VolatilityThreshold &lt;= 0 || c.VolatilityThreshold &gt; 0.01 </span><span class="cov1" title="1">{
+                        return errors.NewValidationError("VOLATILITY_THRESHOLD must be between 0 and 0.01")
+                }</span>
+                <span class="cov1" title="1">if c.MaxRateMultiplier &lt;= 1.0 || c.MaxRateMultiplier &gt; 5.0 </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("MAX_RATE_MULTIPLIER must be between 1.0 and 5.0")
+                }</span>
+                <span class="cov1" title="1">if c.MinRateMultiplier &lt; 0.1 || c.MinRateMultiplier &gt;= 1.0 </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("MIN_RATE_MULTIPLIER must be between 0.1 and 1.0")
+                }</span>
+                <span class="cov1" title="1">if c.MinRateMultiplier &gt;= c.MaxRateMultiplier </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("MIN_RATE_MULTIPLIER must be less than MAX_RATE_MULTIPLIER")
+                }</span>
+                <span class="cov1" title="1">if c.RateRangeIncreasePercent &lt;= 0 || c.RateRangeIncreasePercent &gt; 1.0 </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("RATE_RANGE_INCREASE_PERCENT must be between 0 and 1.0 (0-100%)")
+                }</span>
+        }
+
+        // 驗證K線策略參數
+        <span class="cov4" title="2">if c.EnableKlineStrategy </span><span class="cov0" title="0">{
+                if c.KlineTimeFrame == "" </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("KLINE_TIME_FRAME is required when ENABLE_KLINE_STRATEGY is true")
+                }</span>
+                <span class="cov0" title="0">if c.KlinePeriod &lt;= 0 </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("KLINE_PERIOD must be positive")
+                }</span>
+                <span class="cov0" title="0">if c.KlineSpreadPercent &lt; 0 || c.KlineSpreadPercent &gt; 100 </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("KLINE_SPREAD_PERCENT must be between 0 and 100")
+                }</span>
+                // 驗證平滑方法
+                <span class="cov0" title="0">validMethods := []string{"max", "sma", "ema", "hla", "p90"}
+                isValidMethod := false
+                for _, method := range validMethods </span><span class="cov0" title="0">{
+                        if c.KlineSmoothMethod == method </span><span class="cov0" title="0">{
+                                isValidMethod = true
+                                break</span>
+                        }
+                }
+                <span class="cov0" title="0">if !isValidMethod </span><span class="cov0" title="0">{
+                        return errors.NewValidationError("KLINE_SMOOTH_METHOD must be one of: max, sma, ema, hla, p90")
+                }</span>
+        }
+
+        // 驗證借貸檢查間隔
+        <span class="cov4" title="2">if c.LendingCheckMinutes &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.NewValidationError("LENDING_CHECK_MINUTES must be positive")
+        }</span>
+
+        <span class="cov4" title="2">return nil</span>
+}
+
+// GetFundingSymbol 獲取 funding symbol
+func (c *Config) GetFundingSymbol() string <span class="cov1" title="1">{
+        return constants.FundingSymbolPrefix + strings.ToUpper(c.Currency)
+}</span>
+
+// GetMinDailyRateDecimal 獲取最低日利率（小數格式）
+func (c *Config) GetMinDailyRateDecimal() float64 <span class="cov1" title="1">{
+        return c.MinDailyLendRate / constants.PercentageToDecimal
+}</span>
+
+// GetHighHoldRateDecimal 獲取高額持有利率（小數格式）
+func (c *Config) GetHighHoldRateDecimal() float64 <span class="cov0" title="0">{
+        return c.HighHoldRate / constants.PercentageToDecimal
+}</span>
+
+// GetThirtyDayThresholdDecimal 獲取30天閾值（小數格式）
+func (c *Config) GetThirtyDayThresholdDecimal() float64 <span class="cov0" title="0">{
+        return c.ThirtyDayLendRateThreshold / constants.PercentageToDecimal
+}</span>
+
+// GetOneTwentyDayThresholdDecimal 獲取120天閾值（小數格式）
+func (c *Config) GetOneTwentyDayThresholdDecimal() float64 <span class="cov0" title="0">{
+        return c.OneTwentyDayLendRateThreshold / constants.PercentageToDecimal
+}</span>
+
+// setSmartStrategyDefaults 設置智能策略參數的預設值
+func (c *Config) setSmartStrategyDefaults() <span class="cov1" title="1">{
+        // 如果智能策略啟用但參數為零，設置建議的預設值
+        if c.EnableSmartStrategy </span><span class="cov0" title="0">{
+                if c.VolatilityThreshold == 0 </span><span class="cov0" title="0">{
+                        c.VolatilityThreshold = constants.DefaultVolatilityThreshold
+                }</span>
+                <span class="cov0" title="0">if c.MaxRateMultiplier == 0 </span><span class="cov0" title="0">{
+                        c.MaxRateMultiplier = constants.DefaultMaxRateMultiplier
+                }</span>
+                <span class="cov0" title="0">if c.MinRateMultiplier == 0 </span><span class="cov0" title="0">{
+                        c.MinRateMultiplier = constants.DefaultMinRateMultiplier
+                }</span>
+                <span class="cov0" title="0">if c.RateRangeIncreasePercent == 0 </span><span class="cov0" title="0">{
+                        c.RateRangeIncreasePercent = constants.RateRangeIncreasePercent
+                }</span>
+        } else<span class="cov1" title="1"> {
+                // 如果智能策略未啟用，確保參數有預設值以防止驗證錯誤
+                if c.VolatilityThreshold == 0 </span><span class="cov1" title="1">{
+                        c.VolatilityThreshold = constants.DefaultVolatilityThreshold
+                }</span>
+                <span class="cov1" title="1">if c.MaxRateMultiplier == 0 </span><span class="cov1" title="1">{
+                        c.MaxRateMultiplier = constants.DefaultMaxRateMultiplier
+                }</span>
+                <span class="cov1" title="1">if c.MinRateMultiplier == 0 </span><span class="cov1" title="1">{
+                        c.MinRateMultiplier = constants.DefaultMinRateMultiplier
+                }</span>
+                <span class="cov1" title="1">if c.RateRangeIncreasePercent == 0 </span><span class="cov1" title="1">{
+                        c.RateRangeIncreasePercent = constants.RateRangeIncreasePercent
+                }</span>
+        }
+}
+
+// setKlineStrategyDefaults 設置K線策略參數的預設值
+func (c *Config) setKlineStrategyDefaults() <span class="cov1" title="1">{
+        // 如果K線策略啟用但參數為空，設置預設值
+        if c.EnableKlineStrategy </span><span class="cov0" title="0">{
+                if c.KlineTimeFrame == "" </span><span class="cov0" title="0">{
+                        c.KlineTimeFrame = "15m"
+                }</span>
+                <span class="cov0" title="0">if c.KlinePeriod == 0 </span><span class="cov0" title="0">{
+                        c.KlinePeriod = 24 // 6小時的15分鐘K線
+                }</span>
+                <span class="cov0" title="0">if c.KlineSpreadPercent == 0 </span><span class="cov0" title="0">{
+                        c.KlineSpreadPercent = 0.0 // 0%加成
+                }</span>
+                <span class="cov0" title="0">if c.KlineSmoothMethod == "" </span><span class="cov0" title="0">{
+                        c.KlineSmoothMethod = "ema" // 預設使用指數移動平均
+                }</span>
+        }
+}
+
+// setLendingCheckDefaults 設置借貸檢查間隔的預設值
+func (c *Config) setLendingCheckDefaults() <span class="cov1" title="1">{
+        // 如果未設置借貸檢查間隔，預設為 10 分鐘
+        if c.LendingCheckMinutes == 0 </span><span class="cov0" title="0">{
+                c.LendingCheckMinutes = 10
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package errors
+
+import (
+        "fmt"
+)
+
+// 業務錯誤類型
+type BotError struct {
+        Code    string
+        Message string
+        Err     error
+}
+
+func (e *BotError) Error() string <span class="cov0" title="0">{
+        if e.Err != nil </span><span class="cov0" title="0">{
+                return fmt.Sprintf("[%s] %s: %v", e.Code, e.Message, e.Err)
+        }</span>
+        <span class="cov0" title="0">return fmt.Sprintf("[%s] %s", e.Code, e.Message)</span>
+}
+
+func (e *BotError) Unwrap() error <span class="cov0" title="0">{
+        return e.Err
+}</span>
+
+// 預定義錯誤代碼
+const (
+        ErrCodeAPICall           = "API_CALL"
+        ErrCodeRateLimit         = "RATE_LIMIT"
+        ErrCodeConfig            = "CONFIG"
+        ErrCodeInvalidInput      = "INVALID_INPUT"
+        ErrCodeInsufficientFunds = "INSUFFICIENT_FUNDS"
+        ErrCodeOrderFailed       = "ORDER_FAILED"
+        ErrCodeAuthentication    = "AUTH_FAILED"
+)
+
+// 創建錯誤的便利函數
+func NewAPIError(message string, err error) *BotError <span class="cov0" title="0">{
+        return &amp;BotError{Code: ErrCodeAPICall, Message: message, Err: err}
+}</span>
+
+func NewConfigError(message string, err error) *BotError <span class="cov0" title="0">{
+        return &amp;BotError{Code: ErrCodeConfig, Message: message, Err: err}
+}</span>
+
+func NewValidationError(message string) *BotError <span class="cov0" title="0">{
+        return &amp;BotError{Code: ErrCodeInvalidInput, Message: message}
+}</span>
+
+func NewOrderError(message string, err error) *BotError <span class="cov0" title="0">{
+        return &amp;BotError{Code: ErrCodeOrderFailed, Message: message, Err: err}
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package rates
+
+import (
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+)
+
+// Converter 利率轉換器
+type Converter struct{}
+
+// NewConverter 創建新的利率轉換器
+func NewConverter() *Converter <span class="cov7" title="5">{
+        return &amp;Converter{}
+}</span>
+
+// PercentageToDecimal 將百分比轉換為小數
+func (c *Converter) PercentageToDecimal(percentage float64) float64 <span class="cov10" title="10">{
+        return percentage / constants.PercentageToDecimal
+}</span>
+
+// DecimalToPercentage 將小數轉換為百分比
+func (c *Converter) DecimalToPercentage(decimal float64) float64 <span class="cov10" title="10">{
+        return decimal * constants.PercentageToDecimal
+}</span>
+
+// DailyToAnnual 將日利率轉換為年利率
+func (c *Converter) DailyToAnnual(dailyRate float64) float64 <span class="cov9" title="9">{
+        return dailyRate * constants.DaysPerYear
+}</span>
+
+// AnnualToDaily 將年利率轉換為日利率
+func (c *Converter) AnnualToDaily(annualRate float64) float64 <span class="cov9" title="9">{
+        return annualRate / constants.DaysPerYear
+}</span>
+
+// PercentageDailyToDecimalDaily 將百分比日利率轉換為小數日利率
+func (c *Converter) PercentageDailyToDecimalDaily(percentageDaily float64) float64 <span class="cov0" title="0">{
+        return c.PercentageToDecimal(percentageDaily)
+}</span>
+
+// DecimalDailyToPercentageDaily 將小數日利率轉換為百分比日利率
+func (c *Converter) DecimalDailyToPercentageDaily(decimalDaily float64) float64 <span class="cov0" title="0">{
+        return c.DecimalToPercentage(decimalDaily)
+}</span>
+
+// PercentageToAnnualDecimal 將百分比轉換為年化小數
+// 例如：0.5% -&gt; 0.005 -&gt; 1.825 (年化)
+func (c *Converter) PercentageToAnnualDecimal(percentage float64) float64 <span class="cov0" title="0">{
+        dailyDecimal := c.PercentageToDecimal(percentage)
+        return c.DailyToAnnual(dailyDecimal)
+}</span>
+
+// AnnualDecimalToPercentage 將年化小數轉換為百分比
+func (c *Converter) AnnualDecimalToPercentage(annualDecimal float64) float64 <span class="cov0" title="0">{
+        dailyDecimal := c.AnnualToDaily(annualDecimal)
+        return c.DecimalToPercentage(dailyDecimal)
+}</span>
+
+// ValidateDailyRate 驗證日利率是否在合理範圍內
+func (c *Converter) ValidateDailyRate(dailyRate float64) bool <span class="cov0" title="0">{
+        // Bitfinex 限制每日利率不超過 7%
+        const maxDailyRateDecimal = 0.07
+        return dailyRate &gt; 0 &amp;&amp; dailyRate &lt;= maxDailyRateDecimal
+}</span>
+
+// ValidatePercentageRate 驗證百分比利率是否在合理範圍內
+func (c *Converter) ValidatePercentageRate(percentageRate float64) bool <span class="cov0" title="0">{
+        // 轉換為日利率進行驗證
+        dailyRate := c.PercentageToDecimal(percentageRate)
+        return c.ValidateDailyRate(dailyRate)
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package strategy
+
+import (
+        "fmt"
+        "log"
+        "math"
+        "strings"
+        "time"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+        "github.com/ApexLGF/BitfinexLBot/internal/config"
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+        "github.com/ApexLGF/BitfinexLBot/internal/rates"
+)
+
+// LendingBot 貸出機器人
+type LendingBot struct {
+        config         *config.Config
+        client         *bitfinex.Client
+        rateConverter  *rates.Converter
+        smartStrategy  *SmartStrategy
+        notifyCallback func(string) error // Telegram 通知回調函數
+}
+
+// NewLendingBot 創建新的貸出機器人
+func NewLendingBot(cfg *config.Config, client *bitfinex.Client) *LendingBot <span class="cov0" title="0">{
+        return &amp;LendingBot{
+                config:        cfg,
+                client:        client,
+                rateConverter: rates.NewConverter(),
+                smartStrategy: NewSmartStrategy(cfg),
+        }
+}</span>
+
+// LoanOffer 代表一個貸出訂單
+type LoanOffer struct {
+        Amount float64
+        Rate   float64 // 日利率（小數格式）
+        Period int
+}
+
+// Execute 執行機器人主要邏輯
+func (lb *LendingBot) Execute() error <span class="cov0" title="0">{
+        log.Println("開始執行貸出機器人...")
+
+        // 取消所有未完成訂單
+        log.Println("取消所有未完成訂單...")
+        hasPendingOrders, err := lb.cancelAllOffers()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("取消訂單失敗: %v", err)
+                return err
+        }</span>
+
+        // 等待訂單取消完成
+        <span class="cov0" title="0">time.Sleep(constants.RetryDelay)
+
+        // 獲取可用資金
+        log.Println("取得可用額度...")
+        fundsAvailable, err := lb.getAvailableFunds()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("取得餘額錯誤: %v", err)
+                return err
+        }</span>
+        <span class="cov0" title="0">log.Printf("Currency: %s  Available: %f", lb.config.Currency, fundsAvailable)
+
+        // 扣除保留金額
+        if lb.config.ReserveAmount &gt; 0 </span><span class="cov0" title="0">{
+                fundsAvailable = math.Max(0, fundsAvailable-lb.config.ReserveAmount)
+                log.Printf("扣除保留金額後可用: %f", fundsAvailable)
+        }</span>
+
+        // 檢查可用資金
+        <span class="cov0" title="0">if fundsAvailable &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                log.Println("可用資金小於最小貸出額，不進行操作")
+                return nil
+        }</span>
+
+        // 獲取市場數據
+        <span class="cov0" title="0">fundingBook, err := lb.client.GetFundingBook(lb.config.GetFundingSymbol(), constants.MaxPriceLevels)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("取得 Funding Book 錯誤: %v", err)
+                log.Println("使用fallback模式，僅使用最小利率策略")
+                // 使用空的funding book，策略會自動使用最小利率
+                fundingBook = []*bitfinex.FundingBookEntry{}
+        }</span>
+
+        // 根據配置選擇策略
+        <span class="cov0" title="0">var loanOffers []*LoanOffer
+        if lb.config.EnableKlineStrategy </span><span class="cov0" title="0">{
+                log.Println("使用K線策略計算貸出訂單...")
+                loanOffers = lb.calculateKlineOffers(fundsAvailable)
+        }</span> else<span class="cov0" title="0"> if lb.config.EnableSmartStrategy </span><span class="cov0" title="0">{
+                log.Println("使用智能策略計算貸出訂單...")
+                loanOffers = lb.smartStrategy.CalculateSmartOffers(fundsAvailable, fundingBook)
+        }</span> else<span class="cov0" title="0"> {
+                log.Println("使用傳統策略計算貸出訂單...")
+                loanOffers = lb.calculateLoanOffers(fundsAvailable, fundingBook)
+        }</span>
+
+        // 下單
+        <span class="cov0" title="0">return lb.placeLoanOffers(loanOffers, hasPendingOrders)</span>
+}
+
+// cancelAllOffers 取消所有未完成訂單
+func (lb *LendingBot) cancelAllOffers() (bool, error) <span class="cov0" title="0">{
+        offers, err := lb.client.GetFundingOffers(lb.config.GetFundingSymbol())
+        if err != nil </span><span class="cov0" title="0">{
+                return false, err
+        }</span>
+
+        <span class="cov0" title="0">if len(offers) == 0 </span><span class="cov0" title="0">{
+                log.Println("目前沒有未完成的訂單")
+                return false, nil
+        }</span>
+
+        <span class="cov0" title="0">for _, offer := range offers </span><span class="cov0" title="0">{
+                if err := lb.client.CancelFundingOffer(offer.ID); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("取消訂單失敗: %v", err)
+                }</span> else<span class="cov0" title="0"> {
+                        log.Printf("成功取消訂單 ID: %d", offer.ID)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return true, nil</span>
+}
+
+// getAvailableFunds 獲取可用資金
+func (lb *LendingBot) getAvailableFunds() (float64, error) <span class="cov0" title="0">{
+        return lb.client.GetFundingBalance(strings.ToUpper(lb.config.Currency))
+}</span>
+
+// calculateLoanOffers 計算貸出訂單
+func (lb *LendingBot) calculateLoanOffers(fundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer <span class="cov0" title="0">{
+        var loanOffers []*LoanOffer
+
+        // 檢查可用資金
+        if fundsAvailable &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                return loanOffers
+        }</span>
+
+        <span class="cov0" title="0">splitFundsAvailable := fundsAvailable
+
+        // 高額持有策略
+        if lb.config.HighHoldAmount &gt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                highHoldOffers := lb.calculateHighHoldOffers(&amp;splitFundsAvailable)
+                loanOffers = append(loanOffers, highHoldOffers...)
+        }</span>
+
+        // 分散貸出策略
+        <span class="cov0" title="0">if splitFundsAvailable &gt;= lb.config.MinLoan </span><span class="cov0" title="0">{
+                spreadOffers := lb.calculateSpreadOffers(splitFundsAvailable, fundingBook)
+                loanOffers = append(loanOffers, spreadOffers...)
+        }</span>
+
+        <span class="cov0" title="0">return loanOffers</span>
+}
+
+// calculateHighHoldOffers 計算高額持有訂單
+func (lb *LendingBot) calculateHighHoldOffers(splitFundsAvailable *float64) []*LoanOffer <span class="cov0" title="0">{
+        var offers []*LoanOffer
+
+        ordersCount := lb.config.HighHoldOrders
+        if ordersCount &lt;= 0 </span><span class="cov0" title="0">{
+                ordersCount = 1
+        }</span>
+
+        <span class="cov0" title="0">highHold := lb.config.HighHoldAmount
+        if lb.config.MaxLoan &gt; 0 &amp;&amp; highHold &gt; lb.config.MaxLoan </span><span class="cov0" title="0">{
+                highHold = lb.config.MaxLoan
+        }</span>
+
+        <span class="cov0" title="0">possibleOrders := int(*splitFundsAvailable / highHold)
+        actualOrders := int(math.Min(float64(ordersCount), float64(possibleOrders)))
+
+        for i := 0; i &lt; actualOrders; i++ </span><span class="cov0" title="0">{
+                if *splitFundsAvailable &lt; highHold </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                <span class="cov0" title="0">offer := &amp;LoanOffer{
+                        Amount: highHold,
+                        Rate:   lb.config.GetHighHoldRateDecimal(),
+                        Period: constants.Period120Days,
+                }
+                offers = append(offers, offer)
+                *splitFundsAvailable -= highHold</span>
+        }
+
+        <span class="cov0" title="0">return offers</span>
+}
+
+// calculateSpreadOffers 計算分散貸出訂單
+func (lb *LendingBot) calculateSpreadOffers(splitFundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer <span class="cov0" title="0">{
+        var offers []*LoanOffer
+
+        numSplits := lb.config.SpreadLend
+        if numSplits &lt;= 0 || splitFundsAvailable &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 計算每筆金額
+        <span class="cov0" title="0">amtEach := splitFundsAvailable / float64(numSplits)
+        amtEach = float64(int64(amtEach*100)) / 100.0
+
+        // 調整分割數
+        for amtEach &lt;= lb.config.MinLoan &amp;&amp; numSplits &gt; 1 </span><span class="cov0" title="0">{
+                numSplits--
+                amtEach = splitFundsAvailable / float64(numSplits)
+                amtEach = float64(int64(amtEach*100)) / 100.0
+        }</span>
+        <span class="cov0" title="0">if numSplits &lt;= 0 </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 計算利率遞增量
+        <span class="cov0" title="0">gapClimb := (lb.config.GapTop - lb.config.GapBottom) / float64(numSplits)
+        nextLend := lb.config.GapBottom
+
+        depthIndex := 0
+        minDailyRate := lb.config.GetMinDailyRateDecimal()
+
+        for numSplits &gt; 0 </span><span class="cov0" title="0">{
+                // 累計市場量至指定利率區間（僅在有funding book數據時）
+                if len(fundingBook) &gt; 0 </span><span class="cov0" title="0">{
+                        for float64(depthIndex) &lt; nextLend &amp;&amp; depthIndex &lt; len(fundingBook)-1 </span><span class="cov0" title="0">{
+                                depthIndex++
+                        }</span>
+                }
+
+                // 計算金額
+                <span class="cov0" title="0">allocAmount := amtEach
+                if lb.config.MaxLoan &gt; 0 &amp;&amp; allocAmount &gt; lb.config.MaxLoan </span><span class="cov0" title="0">{
+                        allocAmount = lb.config.MaxLoan
+                }</span>
+
+                <span class="cov0" title="0">if allocAmount &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                // 計算利率
+                <span class="cov0" title="0">var rate float64
+                if len(fundingBook) &gt; 0 &amp;&amp; depthIndex &lt; len(fundingBook) </span><span class="cov0" title="0">{
+                        marketRate := fundingBook[depthIndex].Rate
+                        if marketRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                                rate = minDailyRate
+                        }</span> else<span class="cov0" title="0"> {
+                                rate = marketRate
+                        }</span>
+                } else<span class="cov0" title="0"> {
+                        // 無funding book數據時使用最小利率
+                        rate = minDailyRate
+                }</span>
+
+                // 計算期間
+                <span class="cov0" title="0">period := lb.calculatePeriod(rate)
+
+                offer := &amp;LoanOffer{
+                        Amount: allocAmount,
+                        Rate:   rate,
+                        Period: period,
+                }
+                offers = append(offers, offer)
+
+                nextLend += gapClimb
+                numSplits--</span>
+        }
+
+        <span class="cov0" title="0">return offers</span>
+}
+
+// calculatePeriod 根據利率計算貸出期間
+func (lb *LendingBot) calculatePeriod(dailyRate float64) int <span class="cov0" title="0">{
+        oneTwentyThreshold := lb.config.GetOneTwentyDayThresholdDecimal()
+        thirtyThreshold := lb.config.GetThirtyDayThresholdDecimal()
+
+        if lb.config.OneTwentyDayLendRateThreshold &gt; 0 &amp;&amp; dailyRate &gt;= oneTwentyThreshold </span><span class="cov0" title="0">{
+                return constants.Period120Days
+        }</span> else<span class="cov0" title="0"> if lb.config.ThirtyDayLendRateThreshold &gt; 0 &amp;&amp; dailyRate &gt;= thirtyThreshold </span><span class="cov0" title="0">{
+                return constants.Period30Days
+        }</span> else<span class="cov0" title="0"> {
+                return constants.DefaultPeriodDays
+        }</span>
+}
+
+// placeLoanOffers 下單
+func (lb *LendingBot) placeLoanOffers(loanOffers []*LoanOffer, hasPendingOrders bool) error <span class="cov0" title="0">{
+        orderCount := 0
+        fundingSymbol := lb.config.GetFundingSymbol()
+
+        for _, offer := range loanOffers </span><span class="cov0" title="0">{
+                if lb.config.OrderLimit != 0 &amp;&amp; orderCount &gt;= lb.config.OrderLimit </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                <span class="cov0" title="0">rate := offer.Rate
+                if !hasPendingOrders </span><span class="cov0" title="0">{
+                        // 添加利率加成
+                        rate += lb.rateConverter.PercentageToDecimal(lb.config.RateBonus)
+                }</span>
+
+                // 驗證利率
+                <span class="cov0" title="0">if !lb.rateConverter.ValidateDailyRate(rate) </span><span class="cov0" title="0">{
+                        log.Printf("跳過無效利率: %.6f", rate)
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">if lb.config.TestMode </span><span class="cov0" title="0">{
+                        // 測試模式：只記錄不真的下單
+                        log.Printf("🧪 [測試模式] 模擬下單 =&gt; Rate: %.6f%%, Amount: %.4f, Period: %d",
+                                lb.rateConverter.DecimalToPercentage(rate), offer.Amount, offer.Period)
+                        orderCount++
+                }</span> else<span class="cov0" title="0"> {
+                        // 正式模式：真的下單
+                        log.Printf("下單 =&gt; Rate: %.6f%%, Amount: %.4f, Period: %d",
+                                lb.rateConverter.DecimalToPercentage(rate), offer.Amount, offer.Period)
+
+                        err := lb.client.SubmitFundingOffer(fundingSymbol, offer.Amount, rate, offer.Period, false)
+                        if err != nil </span><span class="cov0" title="0">{
+                                log.Printf("下訂單失敗: %v", err)
+                        }</span> else<span class="cov0" title="0"> {
+                                orderCount++
+                        }</span>
+                }
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// CheckRateThreshold 檢查利率是否超過閾值（基於5分鐘K線最近12根高點）
+func (lb *LendingBot) CheckRateThreshold() (bool, float64, error) <span class="cov0" title="0">{
+        // 獲取5分鐘K線數據（12根，相當於1小時）
+        candles, err := lb.client.GetFundingCandles(
+                lb.config.GetFundingSymbol(),
+                "5m",
+                12,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return false, 0, err
+        }</span>
+
+        // 找到最近12根K線中的最高利率
+        <span class="cov0" title="0">highestRate := lb.findMaxRate(candles)
+        percentageRate := lb.rateConverter.DecimalDailyToPercentageDaily(highestRate)
+        exceeded := percentageRate &gt; lb.config.NotifyRateThreshold
+
+        log.Printf("K線閾值檢查 - 最近12根5分鐘K線最高利率: %.4f%%, 閾值: %.4f%%, 超過: %v",
+                percentageRate, lb.config.NotifyRateThreshold, exceeded)
+
+        return exceeded, percentageRate, nil</span>
+}
+
+// SetNotifyCallback 設置 Telegram 通知回調函數
+func (lb *LendingBot) SetNotifyCallback(callback func(string) error) <span class="cov0" title="0">{
+        lb.notifyCallback = callback
+}</span>
+
+// CheckNewLendingCredits 檢查新的借貸訂單並發送通知
+func (lb *LendingBot) CheckNewLendingCredits() error <span class="cov0" title="0">{
+        log.Println("檢查新的借貸訂單...")
+
+        // 獲取當前活躍的借貸訂單
+        credits, err := lb.client.GetFundingCredits(lb.config.GetFundingSymbol())
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("獲取借貸訂單失敗: %v", err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if len(credits) == 0 </span><span class="cov0" title="0">{
+                log.Println("目前沒有活躍的借貸訂單")
+                return nil
+        }</span>
+
+        // 獲取當前時間戳（毫秒）
+        <span class="cov0" title="0">currentTime := time.Now().UnixNano() / int64(time.Millisecond)
+
+        // 如果這是第一次檢查（LastLendingCheckTime 為 0），初始化時間戳但不發送通知
+        if lb.config.LastLendingCheckTime == 0 </span><span class="cov0" title="0">{
+                log.Printf("首次檢查，發現 %d 個現有的借貸訂單，初始化檢查時間戳", len(credits))
+                lb.config.LastLendingCheckTime = currentTime
+                return nil
+        }</span>
+
+        // 檢查是否有新的借貸訂單（開始時間大於上次檢查時間）
+        <span class="cov0" title="0">var newCredits []*bitfinex.FundingCredit
+        for _, credit := range credits </span><span class="cov0" title="0">{
+                if credit.MTSOpened &gt; lb.config.LastLendingCheckTime </span><span class="cov0" title="0">{
+                        newCredits = append(newCredits, credit)
+                }</span>
+        }
+
+        // 更新最後檢查時間
+        <span class="cov0" title="0">lb.config.LastLendingCheckTime = currentTime
+
+        // 如果有新的借貸訂單，發送通知
+        if len(newCredits) &gt; 0 </span><span class="cov0" title="0">{
+                log.Printf("發現 %d 個新的借貸訂單", len(newCredits))
+                return lb.sendLendingNotification(newCredits)
+        }</span>
+
+        <span class="cov0" title="0">log.Println("沒有新的借貸訂單")
+        return nil</span>
+}
+
+// sendLendingNotification 發送借貸訂單通知
+func (lb *LendingBot) sendLendingNotification(credits []*bitfinex.FundingCredit) error <span class="cov0" title="0">{
+        if lb.notifyCallback == nil </span><span class="cov0" title="0">{
+                log.Println("Telegram 通知回調未設置，跳過通知")
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">message := "💰 新的借貸訂單通知\n\n"
+
+        // 先計算所有訂單的統計信息
+        totalAmount := 0.0
+        totalEarnings := 0.0
+
+        for _, credit := range credits </span><span class="cov0" title="0">{
+                dailyEarnings := credit.Amount * credit.Rate
+                periodEarnings := dailyEarnings * float64(credit.Period)
+                totalAmount += credit.Amount
+                totalEarnings += periodEarnings
+        }</span>
+
+        // 顯示詳細信息（最多顯示配置數量的訂單）
+        <span class="cov0" title="0">for i, credit := range credits </span><span class="cov0" title="0">{
+                if i &gt;= constants.MaxDisplayOrders </span><span class="cov0" title="0">{
+                        remaining := len(credits) - constants.MaxDisplayOrders
+                        message += fmt.Sprintf("... 還有 %d 個訂單\n", remaining)
+                        break</span>
+                }
+
+                // 計算預期收益（日利率 * 金額 * 期間）
+                <span class="cov0" title="0">dailyEarnings := credit.Amount * credit.Rate
+                periodEarnings := dailyEarnings * float64(credit.Period)
+
+                // 格式化開始時間
+                openTime := time.Unix(credit.MTSOpened/1000, 0)
+
+                message += fmt.Sprintf("📊 訂單 #%d\n", i+1)
+                message += fmt.Sprintf("💵 金額: %.2f %s\n", credit.Amount, lb.config.Currency)
+                message += fmt.Sprintf("📈 日利率: %.4f%%\n", lb.rateConverter.DecimalToPercentage(credit.Rate))
+                message += fmt.Sprintf("📈 年利率: %.4f%%\n", lb.rateConverter.DecimalToPercentage(credit.Rate)*constants.DaysPerYear)
+                message += fmt.Sprintf("⏰ 期間: %d 天\n", credit.Period)
+                message += fmt.Sprintf("💰 預期收益: %.4f %s\n", periodEarnings, lb.config.Currency)
+                message += fmt.Sprintf("🕐 開始時間: %s\n", openTime.Format("2006-01-02 15:04:05"))
+                message += "\n"</span>
+        }
+
+        // 添加統計信息
+        <span class="cov0" title="0">message += fmt.Sprintf("📊 統計信息:\n")
+        message += fmt.Sprintf("📦 總數量: %d 個訂單\n", len(credits))
+        message += fmt.Sprintf("💵 總金額: %.2f %s\n", totalAmount, lb.config.Currency)
+        message += fmt.Sprintf("💰 總預期收益: %.4f %s\n", totalEarnings, lb.config.Currency)
+
+        // 嘗試發送通知，如果失敗（例如 Telegram 未認證）只記錄日誌但不返回錯誤
+        if err := lb.notifyCallback(message); err != nil </span><span class="cov0" title="0">{
+                log.Printf("發送借貸訂單通知失敗: %v", err)
+                log.Println("新借貸訂單通知內容:")
+                log.Println(message)
+                return nil // 不返回錯誤，避免影響主程序執行
+        }</span>
+
+        <span class="cov0" title="0">log.Println("借貸訂單通知發送成功")
+        return nil</span>
+}
+
+// GetActiveLendingCredits 獲取活躍借貸訂單（供 Telegram 指令使用）
+func (lb *LendingBot) GetActiveLendingCredits() ([]*bitfinex.FundingCredit, error) <span class="cov0" title="0">{
+        return lb.client.GetFundingCredits(lb.config.GetFundingSymbol())
+}</span>
+
+// calculateKlineOffers 基於K線數據計算貸出訂單
+func (lb *LendingBot) calculateKlineOffers(fundsAvailable float64) []*LoanOffer <span class="cov0" title="0">{
+        var loanOffers []*LoanOffer
+
+        // 檢查可用資金
+        if fundsAvailable &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                return loanOffers
+        }</span>
+
+        // 獲取K線數據
+        <span class="cov0" title="0">candles, _ := lb.client.GetFundingCandles(
+                lb.config.GetFundingSymbol(),
+                lb.config.KlineTimeFrame,
+                lb.config.KlinePeriod,
+        )
+
+        // 找到最近期間內的最高利率
+        highestRate := lb.findHighestRateFromCandles(candles)
+        log.Printf("K線數據分析：最高利率 %.6f%%", lb.rateConverter.DecimalToPercentage(highestRate))
+
+        // 計算目標利率（最高利率 + 加成）
+        spreadMultiplier := 1.0 + (lb.config.KlineSpreadPercent / 100.0)
+        targetRate := highestRate * spreadMultiplier
+
+        // 確保不低於最小利率
+        minDailyRate := lb.config.GetMinDailyRateDecimal()
+        if targetRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                targetRate = minDailyRate
+                log.Printf("目標利率低於最小利率，使用最小利率: %.6f%%", lb.rateConverter.DecimalToPercentage(targetRate))
+        }</span>
+
+        <span class="cov0" title="0">log.Printf("K線策略目標利率: %.6f%% (加成: %.1f%%)",
+                lb.rateConverter.DecimalToPercentage(targetRate),
+                lb.config.KlineSpreadPercent)
+
+        splitFundsAvailable := fundsAvailable
+
+        // 高額持有策略
+        if lb.config.HighHoldAmount &gt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                highHoldOffers := lb.calculateHighHoldOffers(&amp;splitFundsAvailable)
+                loanOffers = append(loanOffers, highHoldOffers...)
+        }</span>
+
+        // 使用目標利率創建分散訂單
+        <span class="cov0" title="0">if splitFundsAvailable &gt;= lb.config.MinLoan </span><span class="cov0" title="0">{
+                klineOffers := lb.calculateKlineSpreadOffers(splitFundsAvailable, targetRate)
+                loanOffers = append(loanOffers, klineOffers...)
+        }</span>
+
+        <span class="cov0" title="0">return loanOffers</span>
+}
+
+// findHighestRateFromCandles 從K線數據中找到最高利率
+func (lb *LendingBot) findHighestRateFromCandles(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        if len(candles) == 0 </span><span class="cov0" title="0">{
+                return lb.config.GetMinDailyRateDecimal()
+        }</span>
+
+        // 根據配置選擇平滑方法
+        <span class="cov0" title="0">switch lb.config.KlineSmoothMethod </span>{
+        case "max":<span class="cov0" title="0">
+                return lb.findMaxRate(candles)</span>
+        case "sma":<span class="cov0" title="0">
+                return lb.calculateSMA(candles)</span>
+        case "ema":<span class="cov0" title="0">
+                return lb.calculateEMAHigh(candles)</span>
+        case "hla":<span class="cov0" title="0">
+                return lb.calculateHighLowAverage(candles)</span>
+        case "p90":<span class="cov0" title="0">
+                return lb.calculate90Percentile(candles)</span>
+        default:<span class="cov0" title="0">
+                log.Printf("未知的平滑方法: %s，使用預設的 EMA", lb.config.KlineSmoothMethod)
+                return lb.calculateEMAHigh(candles)</span>
+        }
+}
+
+// findMaxRate 找到最高利率（原始方法）
+func (lb *LendingBot) findMaxRate(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        highestRate := candles[0].High
+        for _, candle := range candles </span><span class="cov0" title="0">{
+                if candle.High &gt; highestRate </span><span class="cov0" title="0">{
+                        highestRate = candle.High
+                }</span>
+        }
+        <span class="cov0" title="0">return highestRate</span>
+}
+
+// calculateSMA 計算收盤價的簡單移動平均
+func (lb *LendingBot) calculateSMA(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        if len(candles) == 0 </span><span class="cov0" title="0">{
+                return lb.config.GetMinDailyRateDecimal()
+        }</span>
+
+        <span class="cov0" title="0">sum := 0.0
+        for _, candle := range candles </span><span class="cov0" title="0">{
+                sum += candle.Close
+        }</span>
+        <span class="cov0" title="0">return sum / float64(len(candles))</span>
+}
+
+// calculateEMAHigh 計算高點的指數移動平均
+func (lb *LendingBot) calculateEMAHigh(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        if len(candles) == 0 </span><span class="cov0" title="0">{
+                return lb.config.GetMinDailyRateDecimal()
+        }</span>
+
+        // EMA 係數，期間越長係數越小
+        <span class="cov0" title="0">alpha := 2.0 / (float64(len(candles)) + 1.0)
+        ema := candles[0].High
+
+        for i := 1; i &lt; len(candles); i++ </span><span class="cov0" title="0">{
+                ema = alpha*candles[i].High + (1-alpha)*ema
+        }</span>
+
+        <span class="cov0" title="0">return ema</span>
+}
+
+// calculateHighLowAverage 計算高低點平均
+func (lb *LendingBot) calculateHighLowAverage(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        if len(candles) == 0 </span><span class="cov0" title="0">{
+                return lb.config.GetMinDailyRateDecimal()
+        }</span>
+
+        <span class="cov0" title="0">sumHigh := 0.0
+        sumLow := 0.0
+        for _, candle := range candles </span><span class="cov0" title="0">{
+                sumHigh += candle.High
+                sumLow += candle.Low
+        }</span>
+
+        <span class="cov0" title="0">avgHigh := sumHigh / float64(len(candles))
+        avgLow := sumLow / float64(len(candles))
+
+        // 取高低點平均的平均（偏向高點一些）
+        return (avgHigh + avgLow) / 2.0</span>
+}
+
+// calculate90Percentile 計算90百分位數
+func (lb *LendingBot) calculate90Percentile(candles []*bitfinex.Candle) float64 <span class="cov0" title="0">{
+        if len(candles) == 0 </span><span class="cov0" title="0">{
+                return lb.config.GetMinDailyRateDecimal()
+        }</span>
+
+        // 收集所有高點
+        <span class="cov0" title="0">highs := make([]float64, len(candles))
+        for i, candle := range candles </span><span class="cov0" title="0">{
+                highs[i] = candle.High
+        }</span>
+
+        // 簡單排序
+        <span class="cov0" title="0">for i := 0; i &lt; len(highs); i++ </span><span class="cov0" title="0">{
+                for j := i + 1; j &lt; len(highs); j++ </span><span class="cov0" title="0">{
+                        if highs[i] &gt; highs[j] </span><span class="cov0" title="0">{
+                                highs[i], highs[j] = highs[j], highs[i]
+                        }</span>
+                }
+        }
+
+        // 計算90百分位數的索引
+        <span class="cov0" title="0">index := int(float64(len(highs)) * 0.9)
+        if index &gt;= len(highs) </span><span class="cov0" title="0">{
+                index = len(highs) - 1
+        }</span>
+
+        <span class="cov0" title="0">return highs[index]</span>
+}
+
+// calculateKlineSpreadOffers 基於K線目標利率計算分散訂單
+func (lb *LendingBot) calculateKlineSpreadOffers(fundsAvailable float64, targetRate float64) []*LoanOffer <span class="cov0" title="0">{
+        var offers []*LoanOffer
+
+        numSplits := lb.config.SpreadLend
+        if numSplits &lt;= 0 || fundsAvailable &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 計算每筆金額
+        <span class="cov0" title="0">amtEach := fundsAvailable / float64(numSplits)
+        amtEach = float64(int64(amtEach*100)) / 100.0
+
+        // 調整分割數
+        for amtEach &lt;= lb.config.MinLoan &amp;&amp; numSplits &gt; 1 </span><span class="cov0" title="0">{
+                numSplits--
+                amtEach = fundsAvailable / float64(numSplits)
+                amtEach = float64(int64(amtEach*100)) / 100.0
+        }</span>
+        <span class="cov0" title="0">if numSplits &lt;= 0 </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 創建訂單，使用目標利率為基準，微調以分散風險
+        <span class="cov0" title="0">for i := 0; i &lt; numSplits; i++ </span><span class="cov0" title="0">{
+                // 計算金額
+                allocAmount := amtEach
+                if lb.config.MaxLoan &gt; 0 &amp;&amp; allocAmount &gt; lb.config.MaxLoan </span><span class="cov0" title="0">{
+                        allocAmount = lb.config.MaxLoan
+                }</span>
+
+                <span class="cov0" title="0">if allocAmount &lt; lb.config.MinLoan </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                <span class="cov0" title="0">rate := targetRate * (1 + (float64(i) * lb.config.RateRangeIncreasePercent))
+
+                // 確保利率不低於最小利率
+                minDailyRate := lb.config.GetMinDailyRateDecimal()
+                if rate &lt; minDailyRate </span><span class="cov0" title="0">{
+                        rate = minDailyRate
+                }</span>
+
+                // 計算期間
+                <span class="cov0" title="0">period := lb.calculatePeriod(rate)
+
+                offer := &amp;LoanOffer{
+                        Amount: allocAmount,
+                        Rate:   rate,
+                        Period: period,
+                }
+                offers = append(offers, offer)</span>
+        }
+
+        <span class="cov0" title="0">return offers</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package strategy
+
+import (
+        "math"
+        "time"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+)
+
+// MarketAnalyzer 市場分析器
+type MarketAnalyzer struct {
+        rateHistory    []RateSnapshot
+        maxHistorySize int
+}
+
+// RateSnapshot 利率快照
+type RateSnapshot struct {
+        Rate      float64
+        Timestamp time.Time
+        Volume    float64
+}
+
+// MarketCondition 市場狀況
+type MarketCondition struct {
+        Trend          string  // "rising", "falling", "stable"
+        Volatility     float64 // 波動率
+        LiquidityDepth int     // 流動性深度
+        AvgRate        float64 // 平均利率
+        RateRatio      float64 // 當前利率/平均利率
+}
+
+// NewMarketAnalyzer 創建市場分析器
+func NewMarketAnalyzer() *MarketAnalyzer <span class="cov10" title="4">{
+        return &amp;MarketAnalyzer{
+                rateHistory:    make([]RateSnapshot, 0),
+                maxHistorySize: 48, // 保留48個數據點 (12小時，每15分鐘一次)
+        }
+}</span>
+
+// AddRateSnapshot 添加利率快照
+func (ma *MarketAnalyzer) AddRateSnapshot(rate float64, volume float64) <span class="cov5" title="2">{
+        snapshot := RateSnapshot{
+                Rate:      rate,
+                Timestamp: time.Now(),
+                Volume:    volume,
+        }
+
+        ma.rateHistory = append(ma.rateHistory, snapshot)
+
+        // 保持歷史數據大小限制
+        if len(ma.rateHistory) &gt; ma.maxHistorySize </span><span class="cov0" title="0">{
+                ma.rateHistory = ma.rateHistory[1:]
+        }</span>
+}
+
+// AnalyzeMarket 分析市場狀況
+func (ma *MarketAnalyzer) AnalyzeMarket(fundingBook []*bitfinex.FundingBookEntry) *MarketCondition <span class="cov5" title="2">{
+        if len(ma.rateHistory) &lt; 3 </span><span class="cov5" title="2">{
+                // 數據不足，返回默認狀況
+                return &amp;MarketCondition{
+                        Trend:          "stable",
+                        Volatility:     0.0,
+                        LiquidityDepth: len(fundingBook),
+                        AvgRate:        0.0,
+                        RateRatio:      1.0,
+                }
+        }</span>
+
+        <span class="cov0" title="0">avgRate := ma.calculateAverageRate()
+        volatility := ma.calculateVolatility()
+        trend := ma.determineTrend()
+        currentRate := ma.rateHistory[len(ma.rateHistory)-1].Rate
+        rateRatio := 1.0
+        if avgRate &gt; 0 </span><span class="cov0" title="0">{
+                rateRatio = currentRate / avgRate
+        }</span>
+
+        <span class="cov0" title="0">return &amp;MarketCondition{
+                Trend:          trend,
+                Volatility:     volatility,
+                LiquidityDepth: len(fundingBook),
+                AvgRate:        avgRate,
+                RateRatio:      rateRatio,
+        }</span>
+}
+
+// calculateAverageRate 計算平均利率
+func (ma *MarketAnalyzer) calculateAverageRate() float64 <span class="cov0" title="0">{
+        if len(ma.rateHistory) == 0 </span><span class="cov0" title="0">{
+                return 0.0
+        }</span>
+
+        <span class="cov0" title="0">var sum float64
+        for _, snapshot := range ma.rateHistory </span><span class="cov0" title="0">{
+                sum += snapshot.Rate
+        }</span>
+
+        <span class="cov0" title="0">return sum / float64(len(ma.rateHistory))</span>
+}
+
+// calculateVolatility 計算波動率
+func (ma *MarketAnalyzer) calculateVolatility() float64 <span class="cov0" title="0">{
+        if len(ma.rateHistory) &lt; 2 </span><span class="cov0" title="0">{
+                return 0.0
+        }</span>
+
+        <span class="cov0" title="0">avgRate := ma.calculateAverageRate()
+        var sumSquaredDiff float64
+
+        for _, snapshot := range ma.rateHistory </span><span class="cov0" title="0">{
+                diff := snapshot.Rate - avgRate
+                sumSquaredDiff += diff * diff
+        }</span>
+
+        <span class="cov0" title="0">variance := sumSquaredDiff / float64(len(ma.rateHistory))
+        return math.Sqrt(variance)</span>
+}
+
+// determineTrend 判斷趨勢
+func (ma *MarketAnalyzer) determineTrend() string <span class="cov0" title="0">{
+        if len(ma.rateHistory) &lt; 6 </span><span class="cov0" title="0">{
+                return "stable"
+        }</span>
+
+        // 取最近6個點進行趨勢分析
+        <span class="cov0" title="0">recentHistory := ma.rateHistory[len(ma.rateHistory)-6:]
+
+        var upCount, downCount int
+        for i := 1; i &lt; len(recentHistory); i++ </span><span class="cov0" title="0">{
+                diff := recentHistory[i].Rate - recentHistory[i-1].Rate
+                threshold := 0.0001 // 0.01%的變化閾值
+
+                if diff &gt; threshold </span><span class="cov0" title="0">{
+                        upCount++
+                }</span> else<span class="cov0" title="0"> if diff &lt; -threshold </span><span class="cov0" title="0">{
+                        downCount++
+                }</span>
+        }
+
+        <span class="cov0" title="0">if upCount &gt;= 4 </span><span class="cov0" title="0">{
+                return "rising"
+        }</span> else<span class="cov0" title="0"> if downCount &gt;= 4 </span><span class="cov0" title="0">{
+                return "falling"
+        }</span>
+
+        <span class="cov0" title="0">return "stable"</span>
+}
+
+// AnalyzeCompetition 分析競爭對手
+func (ma *MarketAnalyzer) AnalyzeCompetition(fundingBook []*bitfinex.FundingBookEntry) float64 <span class="cov0" title="0">{
+        if len(fundingBook) &lt; 10 </span><span class="cov0" title="0">{
+                return 0.0
+        }</span>
+
+        // 分析前10層的平均利率差
+        <span class="cov0" title="0">var totalSpread float64
+        validSpreads := 0
+
+        for i := 0; i &lt; 9 &amp;&amp; i &lt; len(fundingBook)-1; i++ </span><span class="cov0" title="0">{
+                spread := fundingBook[i+1].Rate - fundingBook[i].Rate
+                if spread &gt; 0 </span><span class="cov0" title="0">{
+                        totalSpread += spread
+                        validSpreads++
+                }</span>
+        }
+
+        <span class="cov0" title="0">if validSpreads == 0 </span><span class="cov0" title="0">{
+                return 0.0
+        }</span>
+
+        <span class="cov0" title="0">avgSpread := totalSpread / float64(validSpreads)
+
+        // 建議利率：略高於當前最佳利率
+        return fundingBook[0].Rate + avgSpread*0.3</span>
+}
+
+// GetOptimalDepthRange 獲取最佳深度範圍
+func (ma *MarketAnalyzer) GetOptimalDepthRange(fundsAvailable float64, condition *MarketCondition) (bottom, top float64) <span class="cov5" title="2">{
+        // 基礎範圍根據資金量調整
+        baseBottom := 10.0
+        baseTop := 1000.0
+
+        if fundsAvailable &gt; 1000 </span><span class="cov1" title="1">{
+                baseBottom = 5.0
+                baseTop = 3000.0
+        }</span> else<span class="cov1" title="1"> if fundsAvailable &gt; 500 </span><span class="cov0" title="0">{
+                baseBottom = 8.0
+                baseTop = 2000.0
+        }</span>
+
+        // 根據市場狀況調整
+        <span class="cov5" title="2">switch condition.Trend </span>{
+        case "rising":<span class="cov0" title="0">
+                // 利率上升時縮小範圍，提升競爭力
+                baseBottom *= 1.2
+                baseTop *= 0.8</span>
+        case "falling":<span class="cov0" title="0">
+                // 利率下降時擴大範圍，分散風險
+                baseBottom *= 0.8
+                baseTop *= 1.2</span>
+        }
+
+        // 根據波動率調整 (使用配置的波動率閾值)
+        <span class="cov5" title="2">if condition.Volatility &gt; 0.001 </span><span class="cov0" title="0">{ // 高波動
+                baseTop *= 1.3 // 擴大範圍應對波動
+        }</span>
+
+        <span class="cov5" title="2">return baseBottom, baseTop</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package strategy
+
+import (
+        "log"
+        "math"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+        "github.com/ApexLGF/BitfinexLBot/internal/config"
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+)
+
+// SmartStrategy 智能策略引擎
+type SmartStrategy struct {
+        config   *config.Config
+        analyzer *MarketAnalyzer
+}
+
+// NewSmartStrategy 創建智能策略引擎
+func NewSmartStrategy(cfg *config.Config) *SmartStrategy <span class="cov5" title="4">{
+        return &amp;SmartStrategy{
+                config:   cfg,
+                analyzer: NewMarketAnalyzer(),
+        }
+}</span>
+
+// CalculateSmartOffers 計算智能貸出訂單
+func (ss *SmartStrategy) CalculateSmartOffers(fundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer <span class="cov4" title="3">{
+        var loanOffers []*LoanOffer
+
+        if fundsAvailable &lt; ss.config.MinLoan </span><span class="cov1" title="1">{
+                return loanOffers
+        }</span>
+
+        // 添加市場數據到分析器
+        <span class="cov3" title="2">if len(fundingBook) &gt; 0 </span><span class="cov3" title="2">{
+                currentRate := fundingBook[0].Rate
+                totalVolume := ss.calculateTotalVolume(fundingBook)
+                ss.analyzer.AddRateSnapshot(currentRate, totalVolume)
+        }</span>
+
+        // 分析市場狀況
+        <span class="cov3" title="2">marketCondition := ss.analyzer.AnalyzeMarket(fundingBook)
+        log.Printf("市場狀況 - 趨勢: %s, 波動率: %.6f, 利率比例: %.2f",
+                marketCondition.Trend, marketCondition.Volatility, marketCondition.RateRatio)
+
+        // 動態資金配置
+        highHoldRatio, spreadRatio := ss.calculateOptimalAllocation(marketCondition)
+
+        splitFundsAvailable := fundsAvailable
+        highHoldAmount := fundsAvailable * highHoldRatio
+        spreadAmount := fundsAvailable * spreadRatio
+
+        log.Printf("資金配置 - 高額持有: %.2f%% (%.2f), 分散貸出: %.2f%% (%.2f)",
+                highHoldRatio*100, highHoldAmount, spreadRatio*100, spreadAmount)
+
+        // 高額持有策略（動態利率）
+        if ss.config.HighHoldAmount &gt; ss.config.MinLoan &amp;&amp; highHoldAmount &gt;= ss.config.HighHoldAmount </span><span class="cov1" title="1">{
+                highHoldOffers := ss.calculateSmartHighHoldOffers(&amp;splitFundsAvailable, marketCondition, fundingBook)
+                loanOffers = append(loanOffers, highHoldOffers...)
+        }</span>
+
+        // 分散貸出策略（智能優化）
+        <span class="cov3" title="2">if splitFundsAvailable &gt;= ss.config.MinLoan </span><span class="cov3" title="2">{
+                spreadOffers := ss.calculateSmartSpreadOffers(splitFundsAvailable, fundingBook, marketCondition)
+                loanOffers = append(loanOffers, spreadOffers...)
+        }</span>
+
+        <span class="cov3" title="2">return loanOffers</span>
+}
+
+// calculateOptimalAllocation 計算最佳資金配置
+func (ss *SmartStrategy) calculateOptimalAllocation(condition *MarketCondition) (highHoldRatio, spreadRatio float64) <span class="cov6" title="7">{
+        baseHighHold := 0.5 // 基礎50%配置
+
+        switch condition.Trend </span>{
+        case "rising":<span class="cov1" title="1">
+                // 利率上升趨勢，減少固定利率配置
+                baseHighHold = 0.3</span>
+        case "falling":<span class="cov1" title="1">
+                // 利率下降趨勢，增加固定利率配置
+                baseHighHold = 0.7</span>
+        }
+
+        // 根據波動率調整
+        <span class="cov6" title="7">if condition.Volatility &gt; ss.config.VolatilityThreshold </span><span class="cov1" title="1">{
+                // 高波動性，偏向穩定策略
+                baseHighHold += 0.1
+        }</span>
+
+        // 根據利率比例調整
+        <span class="cov6" title="7">if condition.RateRatio &gt; 1.2 </span><span class="cov1" title="1">{
+                // 當前利率明顯高於平均，偏向鎖定長期
+                baseHighHold += 0.1
+        }</span> else<span class="cov6" title="6"> if condition.RateRatio &lt; 0.8 </span><span class="cov0" title="0">{
+                // 當前利率明顯低於平均，偏向靈活短期
+                baseHighHold -= 0.1
+        }</span>
+
+        // 確保在合理範圍內
+        <span class="cov6" title="7">baseHighHold = math.Max(0.2, math.Min(0.8, baseHighHold))
+
+        return baseHighHold, 1.0 - baseHighHold</span>
+}
+
+// calculateSmartHighHoldOffers 計算智能高額持有訂單
+func (ss *SmartStrategy) calculateSmartHighHoldOffers(splitFundsAvailable *float64, condition *MarketCondition, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer <span class="cov1" title="1">{
+        var offers []*LoanOffer
+
+        ordersCount := ss.config.HighHoldOrders
+        if ordersCount &lt;= 0 </span><span class="cov0" title="0">{
+                ordersCount = 1
+        }</span>
+
+        <span class="cov1" title="1">highHold := ss.config.HighHoldAmount
+        if ss.config.MaxLoan &gt; 0 &amp;&amp; highHold &gt; ss.config.MaxLoan </span><span class="cov0" title="0">{
+                highHold = ss.config.MaxLoan
+        }</span>
+
+        // 計算動態利率
+        <span class="cov1" title="1">dynamicRate := ss.calculateDynamicHighHoldRate(condition, fundingBook)
+
+        // 智能期間選擇
+        period := ss.calculateSmartPeriod(dynamicRate, condition)
+
+        possibleOrders := int(*splitFundsAvailable / highHold)
+        actualOrders := int(math.Min(float64(ordersCount), float64(possibleOrders)))
+
+        log.Printf("智能高額持有 - 動態利率: %.4f%%, 期間: %d天, 訂單數: %d",
+                dynamicRate*100, period, actualOrders)
+
+        for i := 0; i &lt; actualOrders; i++ </span><span class="cov1" title="1">{
+                if *splitFundsAvailable &lt; highHold </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                <span class="cov1" title="1">offer := &amp;LoanOffer{
+                        Amount: highHold,
+                        Rate:   dynamicRate,
+                        Period: period,
+                }
+                offers = append(offers, offer)
+                *splitFundsAvailable -= highHold</span>
+        }
+
+        <span class="cov1" title="1">return offers</span>
+}
+
+// calculateDynamicHighHoldRate 計算動態高額持有利率
+func (ss *SmartStrategy) calculateDynamicHighHoldRate(condition *MarketCondition, fundingBook []*bitfinex.FundingBookEntry) float64 <span class="cov1" title="1">{
+        baseRate := ss.config.GetHighHoldRateDecimal()
+
+        // 如果沒有市場數據，使用基礎利率
+        if len(fundingBook) == 0 </span><span class="cov0" title="0">{
+                return baseRate
+        }</span>
+
+        <span class="cov1" title="1">marketRate := fundingBook[0].Rate
+
+        // 根據市場狀況調整
+        switch condition.Trend </span>{
+        case "rising":<span class="cov0" title="0">
+                // 利率上升趨勢，提高高額持有利率但保持競爭力
+                dynamicRate := math.Min(marketRate*0.85, baseRate*ss.config.MaxRateMultiplier)
+                return math.Max(baseRate*ss.config.MinRateMultiplier, dynamicRate)</span>
+
+        case "falling":<span class="cov0" title="0">
+                // 利率下降趨勢，保守使用基礎利率，但不低於最小倍數
+                return math.Max(baseRate*ss.config.MinRateMultiplier, baseRate)</span>
+
+        default:<span class="cov1" title="1"> // stable
+                // 穩定市場，根據市場利率適度調整
+                if marketRate &gt; baseRate*1.5 </span><span class="cov0" title="0">{
+                        adjustedRate := math.Min(marketRate*0.8, baseRate*ss.config.MaxRateMultiplier)
+                        return math.Max(baseRate*ss.config.MinRateMultiplier, adjustedRate)
+                }</span>
+                <span class="cov1" title="1">return math.Max(baseRate*ss.config.MinRateMultiplier, baseRate)</span>
+        }
+}
+
+// calculateSmartSpreadOffers 計算智能分散貸出訂單
+func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry, condition *MarketCondition) []*LoanOffer <span class="cov3" title="2">{
+        var offers []*LoanOffer
+
+        numSplits := ss.config.SpreadLend
+        if numSplits &lt;= 0 || splitFundsAvailable &lt; ss.config.MinLoan </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 根據市場狀況調整分割數
+        <span class="cov3" title="2">if condition.Volatility &gt; ss.config.VolatilityThreshold </span><span class="cov0" title="0">{
+                // 高波動時減少分割，提升競爭力
+                numSplits = int(float64(numSplits) * constants.ReducedSplitsMultiplier)
+        }</span>
+
+        // 計算每筆金額
+        <span class="cov3" title="2">amtEach := splitFundsAvailable / float64(numSplits)
+        amtEach = float64(int64(amtEach*100)) / 100.0
+
+        // 調整分割數
+        for amtEach &lt;= ss.config.MinLoan &amp;&amp; numSplits &gt; 1 </span><span class="cov1" title="1">{
+                numSplits--
+                amtEach = splitFundsAvailable / float64(numSplits)
+                amtEach = float64(int64(amtEach*100)) / 100.0
+        }</span>
+        <span class="cov3" title="2">if numSplits &lt;= 0 </span><span class="cov0" title="0">{
+                return offers
+        }</span>
+
+        // 動態深度範圍
+        <span class="cov3" title="2">gapBottom, gapTop := ss.analyzer.GetOptimalDepthRange(splitFundsAvailable, condition)
+
+        // 計算利率遞增量
+        gapClimb := (gapTop - gapBottom) / float64(numSplits)
+        nextLend := gapBottom
+
+        minDailyRate := ss.config.GetMinDailyRateDecimal()
+
+        log.Printf("智能分散策略 - 分割數: %d, 深度範圍: %.0f-%.0f, Funding Book數據: %d筆",
+                numSplits, gapBottom, gapTop, len(fundingBook))
+
+        orderIndex := 0                  // 訂單索引，用於確保每個訂單有不同的索引
+        totalOriginalSplits := numSplits // 保存原始分割數
+
+        for numSplits &gt; 0 </span><span class="cov5" title="5">{
+                var currentDepthIndex int
+
+                if len(fundingBook) &gt; 0 </span><span class="cov5" title="5">{
+                        // 使用訂單索引均勻分布在 funding book 中
+                        // 使用原始分割數來計算，而不是遞減中的 numSplits
+                        if totalOriginalSplits &gt; 1 </span><span class="cov5" title="5">{
+                                currentDepthIndex = (orderIndex * (len(fundingBook) - 1)) / (totalOriginalSplits - 1)
+                        }</span> else<span class="cov0" title="0"> {
+                                currentDepthIndex = 0
+                        }</span>
+
+                        // 確保索引在有效範圍內
+                        <span class="cov5" title="5">if currentDepthIndex &gt;= len(fundingBook) </span><span class="cov0" title="0">{
+                                currentDepthIndex = len(fundingBook) - 1
+                        }</span>
+                        <span class="cov5" title="5">if currentDepthIndex &lt; 0 </span><span class="cov0" title="0">{
+                                currentDepthIndex = 0
+                        }</span>
+                } else<span class="cov0" title="0"> {
+                        // 沒有funding book時，使用訂單索引作為虛擬深度
+                        currentDepthIndex = orderIndex
+                }</span>
+
+                // 計算金額
+                <span class="cov5" title="5">allocAmount := amtEach
+                if ss.config.MaxLoan &gt; 0 &amp;&amp; allocAmount &gt; ss.config.MaxLoan </span><span class="cov0" title="0">{
+                        allocAmount = ss.config.MaxLoan
+                }</span>
+
+                <span class="cov5" title="5">if allocAmount &lt; ss.config.MinLoan </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                // 智能利率計算 - 基於 funding book 數據創建遞增利率序列
+                <span class="cov5" title="5">rate := ss.calculateProgressiveRate(fundingBook, minDailyRate, condition, orderIndex, totalOriginalSplits)
+
+                // 智能期間選擇
+                period := ss.calculateSmartPeriod(rate, condition)
+
+                offer := &amp;LoanOffer{
+                        Amount: allocAmount,
+                        Rate:   rate,
+                        Period: period,
+                }
+                offers = append(offers, offer)
+
+                log.Printf("智能訂單 #%d - 利率: %.6f%%, 金額: %.2f, 期間: %d天, 深度索引: %d",
+                        len(offers), rate*100, allocAmount, period, currentDepthIndex)
+
+                nextLend += gapClimb
+                orderIndex++ // 增加訂單索引確保下一個訂單有不同的深度索引
+                numSplits--</span>
+        }
+
+        <span class="cov3" title="2">return offers</span>
+}
+
+// calculateSmartRate 計算智能利率
+func (ss *SmartStrategy) calculateSmartRate(depthIndex int, fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int) float64 <span class="cov0" title="0">{
+        var rate float64
+
+        if len(fundingBook) &gt; 0 &amp;&amp; depthIndex &lt; len(fundingBook) </span><span class="cov0" title="0">{
+                // 使用實際市場數據
+                marketRate := fundingBook[depthIndex].Rate
+
+                // 競爭分析優化
+                competitiveRate := ss.analyzer.AnalyzeCompetition(fundingBook)
+                if competitiveRate &gt; 0 &amp;&amp; competitiveRate &gt; marketRate </span><span class="cov0" title="0">{
+                        marketRate = competitiveRate
+                }</span>
+
+                // 如果市場利率低於最小利率，使用最小利率作為基礎，但添加訂單索引遞增
+                <span class="cov0" title="0">if marketRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                        // 使用最小利率 + 基於訂單索引的小幅遞增來確保差異化
+                        rate = minDailyRate + (minDailyRate * 0.01 * float64(orderIndex))
+                }</span> else<span class="cov0" title="0"> {
+                        rate = marketRate
+                }</span>
+
+                <span class="cov0" title="0">log.Printf("市場數據利率計算 - 深度索引: %d, 市場利率: %.6f%%, 最終利率: %.6f%%",
+                        depthIndex, fundingBook[depthIndex].Rate*100, rate*100)</span>
+        } else<span class="cov0" title="0"> {
+                // 深度超出範圍時，使用合成利率
+                rate = ss.calculateSyntheticRate(depthIndex, minDailyRate, condition)
+        }</span>
+
+        // 根據市場趨勢微調
+        <span class="cov0" title="0">switch condition.Trend </span>{
+        case "rising":<span class="cov0" title="0">
+                // 利率上升時稍微提高利率保持競爭力
+                rate *= 1.01</span>
+        case "falling":<span class="cov0" title="0">
+                // 利率下降時保持原利率
+                break</span>
+        }
+
+        <span class="cov0" title="0">return rate</span>
+}
+
+// calculateProgressiveRate 計算遞增利率序列
+func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int, totalOrders int) float64 <span class="cov7" title="8">{
+        if len(fundingBook) == 0 </span><span class="cov1" title="1">{
+                // 無市場數據時使用合成利率
+                return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+        }</span>
+
+        // 分析 funding book 中的利率分佈
+        <span class="cov6" title="7">var rates []float64
+        for _, entry := range fundingBook </span><span class="cov10" title="19">{
+                if entry.Rate &gt;= minDailyRate </span><span class="cov9" title="18">{
+                        rates = append(rates, entry.Rate)
+                }</span>
+        }
+
+        <span class="cov6" title="7">if len(rates) == 0 </span><span class="cov1" title="1">{
+                // 沒有符合最小利率的數據，使用合成利率
+                baseRate := minDailyRate
+                increment := baseRate * ss.config.RateRangeIncreasePercent * float64(orderIndex)
+                return baseRate + increment
+        }</span>
+
+        // 找出利率範圍
+        <span class="cov6" title="6">minRate := rates[0]
+        maxRate := rates[0]
+        for _, rate := range rates </span><span class="cov9" title="18">{
+                if rate &lt; minRate </span><span class="cov0" title="0">{
+                        minRate = rate
+                }</span>
+                <span class="cov9" title="18">if rate &gt; maxRate </span><span class="cov8" title="12">{
+                        maxRate = rate
+                }</span>
+        }
+
+        <span class="cov6" title="6">log.Printf("Funding Book 利率分析 - 有效利率數量: %d, 原始範圍: %.6f%%-%.6f%%",
+                len(rates), minRate*100, maxRate*100)
+
+        // 確保最小利率不低於配置的最小利率
+        if minRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                minRate = minDailyRate
+        }</span>
+
+        // 創建遞增利率序列
+        <span class="cov6" title="6">if totalOrders &gt; 1 </span><span class="cov6" title="6">{
+                rateRange := maxRate - minRate
+
+                // 如果利率範圍太小（所有利率相同），則人工創建遞增範圍
+                if rateRange &lt; minRate*constants.SmallRateChangePercent </span><span class="cov0" title="0">{
+                        // 使用基礎利率創建遞增範圍
+                        maxRate = minRate * (1.0 + ss.config.RateRangeIncreasePercent)
+                        rateRange = maxRate - minRate
+                        log.Printf("利率範圍太小，使用人工範圍: %.6f%%-%.6f%%", minRate*100, maxRate*100)
+                }</span>
+
+                <span class="cov6" title="6">step := rateRange / float64(totalOrders-1)
+                progressiveRate := minRate + step*float64(orderIndex)
+
+                log.Printf("遞增利率計算 - 訂單索引: %d, 利率範圍: %.6f%%-%.6f%%, 步長: %.6f%%, 遞增利率: %.6f%%",
+                        orderIndex, minRate*100, maxRate*100, step*100, progressiveRate*100)
+
+                return progressiveRate</span>
+        } else<span class="cov0" title="0"> {
+                return minRate
+        }</span>
+}
+
+// calculateSyntheticRate 計算合成利率（當無市場數據時）
+func (ss *SmartStrategy) calculateSyntheticRate(depthIndex int, minDailyRate float64, condition *MarketCondition) float64 <span class="cov1" title="1">{
+        // 基於深度索引創建利率階梯
+        // 利率範圍：最小利率 到 最小利率 × 配置的最大倍數
+        maxRate := minDailyRate * ss.config.MaxRateMultiplier
+
+        // 根據市場狀況調整利率範圍
+        switch condition.Trend </span>{
+        case "rising":<span class="cov0" title="0">
+                // 利率上升趨勢，使用更積極的利率範圍
+                maxRate = minDailyRate * (ss.config.MaxRateMultiplier * 0.8)</span>
+        case "falling":<span class="cov0" title="0">
+                // 利率下降趨勢，使用更保守的利率範圍
+                maxRate = minDailyRate * (ss.config.MaxRateMultiplier * 1.2)</span>
+        }
+
+        // 根據深度索引計算利率增量，確保每個索引都有不同的利率
+        // 使用更細緻的階梯，確保差異化
+        <span class="cov1" title="1">totalSteps := 20.0 // 20個基礎層級
+        rateStep := (maxRate - minDailyRate) / totalSteps
+
+        // 為每個深度索引計算唯一利率
+        syntheticRate := minDailyRate + float64(depthIndex)*rateStep
+
+        // 添加微小的隨機變化以確保完全不同
+        // 基於深度索引的位置添加細微調整
+        microAdjustment := rateStep * 0.1 * float64(depthIndex%3) / 3.0
+        syntheticRate += microAdjustment
+
+        // 確保在合理範圍內
+        if syntheticRate &lt; minDailyRate </span><span class="cov0" title="0">{
+                syntheticRate = minDailyRate
+        }</span>
+        <span class="cov1" title="1">if syntheticRate &gt; maxRate </span><span class="cov0" title="0">{
+                syntheticRate = maxRate
+        }</span>
+
+        <span class="cov1" title="1">log.Printf("合成利率計算 - 深度索引: %d, 基礎利率: %.6f%%, 合成利率: %.6f%%, 趨勢: %s",
+                depthIndex, minDailyRate*100, syntheticRate*100, condition.Trend)
+
+        return syntheticRate</span>
+}
+
+// calculateSmartPeriod 計算智能期間
+func (ss *SmartStrategy) calculateSmartPeriod(dailyRate float64, condition *MarketCondition) int <span class="cov8" title="11">{
+        oneTwentyThreshold := ss.config.GetOneTwentyDayThresholdDecimal()
+        thirtyThreshold := ss.config.GetThirtyDayThresholdDecimal()
+
+        // 基礎期間邏輯
+        basePeriod := constants.DefaultPeriodDays
+        if ss.config.OneTwentyDayLendRateThreshold &gt; 0 &amp;&amp; dailyRate &gt;= oneTwentyThreshold </span><span class="cov6" title="6">{
+                basePeriod = constants.Period120Days
+        }</span> else<span class="cov5" title="5"> if ss.config.ThirtyDayLendRateThreshold &gt; 0 &amp;&amp; dailyRate &gt;= thirtyThreshold </span><span class="cov1" title="1">{
+                basePeriod = constants.Period30Days
+        }</span>
+
+        // 根據市場狀況智能調整
+        <span class="cov8" title="11">switch condition.Trend </span>{
+        case "rising":<span class="cov1" title="1">
+                // 利率上升趨勢，偏向短期以便重新定價
+                if basePeriod == constants.Period120Days </span><span class="cov1" title="1">{
+                        basePeriod = constants.Period30Days
+                }</span> else<span class="cov0" title="0"> if basePeriod == constants.Period30Days </span><span class="cov0" title="0">{
+                        basePeriod = constants.DefaultPeriodDays
+                }</span>
+
+        case "falling":<span class="cov0" title="0">
+                // 利率下降趨勢，鎖定當前較高利率
+                if dailyRate &gt; condition.AvgRate*1.1 &amp;&amp; basePeriod == constants.DefaultPeriodDays </span><span class="cov0" title="0">{
+                        basePeriod = constants.Period30Days
+                }</span>
+        }
+
+        // 高波動環境偏向短期 (使用配置的波動率閾值)
+        <span class="cov8" title="11">if condition.Volatility &gt; ss.config.VolatilityThreshold*1.5 &amp;&amp; basePeriod &gt; constants.Period30Days </span><span class="cov1" title="1">{
+                basePeriod = constants.Period30Days
+        }</span>
+
+        <span class="cov8" title="11">return basePeriod</span>
+}
+
+// calculateTotalVolume 計算總成交量
+func (ss *SmartStrategy) calculateTotalVolume(fundingBook []*bitfinex.FundingBookEntry) float64 <span class="cov3" title="2">{
+        var totalVolume float64
+        maxEntries := 10 // 只計算前10層，基於市場深度分析最佳實踐
+
+        for i, entry := range fundingBook </span><span class="cov6" title="6">{
+                if i &gt;= maxEntries </span><span class="cov0" title="0">{
+                        break</span>
+                }
+                <span class="cov6" title="6">totalVolume += math.Abs(entry.Amount)</span>
+        }
+
+        <span class="cov3" title="2">return totalVolume</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package telegram
+
+import (
+        "context"
+        "fmt"
+        "log"
+        "strings"
+        "sync"
+        "time"
+
+        tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+        "github.com/ApexLGF/BitfinexLBot/internal/config"
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+        "github.com/ApexLGF/BitfinexLBot/internal/rates"
+)
+
+// LendingBot interface 用於避免循環依賴
+type LendingBot interface {
+        GetActiveLendingCredits() ([]*bitfinex.FundingCredit, error)
+        CheckRateThreshold() (bool, float64, error)
+}
+
+// Bot Telegram 機器人封裝
+type Bot struct {
+        api                 *tgbotapi.BotAPI
+        config              *config.Config
+        bitfinexClient      *bitfinex.Client
+        rateConverter       *rates.Converter
+        authenticatedChatID int64
+        chatIDMutex         sync.Mutex
+        restartCallback     func() error // 重啟回調函數
+        lendingBot          LendingBot   // 借貸機器人引用
+}
+
+// NewBot 創建新的 Telegram 機器人
+func NewBot(cfg *config.Config, bfxClient *bitfinex.Client) (*Bot, error) <span class="cov0" title="0">{
+        api, err := tgbotapi.NewBotAPI(cfg.TelegramBotToken)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to create telegram bot: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">log.Printf("Authorized on account %s", api.Self.UserName)
+
+        return &amp;Bot{
+                api:            api,
+                config:         cfg,
+                bitfinexClient: bfxClient,
+                rateConverter:  rates.NewConverter(),
+        }, nil</span>
+}
+
+// Start 啟動 Telegram 機器人
+func (b *Bot) Start() <span class="cov0" title="0">{
+        // 創建一個永不取消的 context
+        ctx := context.Background()
+        b.StartWithContext(ctx)
+}</span>
+
+// StartWithContext 啟動支持 context 的 Telegram 機器人
+func (b *Bot) StartWithContext(ctx context.Context) <span class="cov0" title="0">{
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        log.Println("Telegram 機器人收到停止信號")
+                        return</span>
+                default:<span class="cov0" title="0"></span>
+                }
+
+                <span class="cov0" title="0">u := tgbotapi.NewUpdate(0)
+                u.Timeout = int(constants.TelegramUpdateTimeout.Seconds())
+
+                updates, err := b.api.GetUpdatesChan(u)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Failed to get updates, retrying in %v: %v", constants.TelegramRetryDelay, err)
+
+                        // 使用 context 支持的 sleep
+                        select </span>{
+                        case &lt;-ctx.Done():<span class="cov0" title="0">
+                                log.Println("Telegram 機器人在重試等待中收到停止信號")
+                                return</span>
+                        case &lt;-time.After(constants.TelegramRetryDelay):<span class="cov0" title="0">
+                                continue</span>
+                        }
+                }
+
+                // 處理更新，直到 channel 關閉或 context 取消
+                <span class="cov0" title="0">for </span><span class="cov0" title="0">{
+                        select </span>{
+                        case &lt;-ctx.Done():<span class="cov0" title="0">
+                                log.Println("Telegram 機器人在處理更新時收到停止信號")
+                                return</span>
+                        case update, ok := &lt;-updates:<span class="cov0" title="0">
+                                if !ok </span><span class="cov0" title="0">{
+                                        log.Printf("Update channel closed, retrying in %v...", constants.TelegramRetryDelay)
+                                        goto retry</span>
+                                }
+
+                                <span class="cov0" title="0">if update.Message == nil </span><span class="cov0" title="0">{
+                                        continue</span>
+                                }
+
+                                <span class="cov0" title="0">go b.handleMessage(update.Message)</span>
+                        }
+                }
+
+        <span class="cov0" title="0">retry:
+                // 使用 context 支持的重試延遲
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        log.Println("Telegram 機器人在重試前收到停止信號")
+                        return</span>
+                case &lt;-time.After(constants.TelegramRetryDelay):<span class="cov0" title="0">
+                        continue</span>
+                }
+        }
+}
+
+// handleMessage 處理 Telegram 訊息
+func (b *Bot) handleMessage(message *tgbotapi.Message) <span class="cov0" title="0">{
+        chatID := message.Chat.ID
+        text := message.Text
+
+        // 處理身份驗證
+        if !b.isAuthenticated(chatID) </span><span class="cov0" title="0">{
+                b.handleAuthentication(chatID, text)
+                return
+        }</span>
+
+        // 處理已驗證用戶的指令
+        <span class="cov0" title="0">b.handleCommand(chatID, text)</span>
+}
+
+// isAuthenticated 檢查是否已驗證
+func (b *Bot) isAuthenticated(chatID int64) bool <span class="cov0" title="0">{
+        b.chatIDMutex.Lock()
+        defer b.chatIDMutex.Unlock()
+        return b.authenticatedChatID == chatID
+}</span>
+
+// setAuthenticated 設置已驗證的聊天ID
+func (b *Bot) setAuthenticated(chatID int64) <span class="cov0" title="0">{
+        b.chatIDMutex.Lock()
+        defer b.chatIDMutex.Unlock()
+        b.authenticatedChatID = chatID
+}</span>
+
+// getAuthenticatedChatID 獲取已驗證的聊天ID
+func (b *Bot) GetAuthenticatedChatID() int64 <span class="cov0" title="0">{
+        b.chatIDMutex.Lock()
+        defer b.chatIDMutex.Unlock()
+        return b.authenticatedChatID
+}</span>
+
+// sendMessage 發送訊息
+func (b *Bot) sendMessage(chatID int64, text string) error <span class="cov0" title="0">{
+        msg := tgbotapi.NewMessage(chatID, text)
+        _, err := b.api.Send(msg)
+        return err
+}</span>
+
+// SendNotification 發送通知（公開方法供外部調用）
+func (b *Bot) SendNotification(message string) error <span class="cov0" title="0">{
+        chatID := b.GetAuthenticatedChatID()
+        if chatID == 0 </span><span class="cov0" title="0">{
+                return fmt.Errorf("no authenticated chat ID")
+        }</span>
+        <span class="cov0" title="0">return b.sendMessage(chatID, message)</span>
+}
+
+// SetRestartCallback 設置重啟回調函數
+func (b *Bot) SetRestartCallback(callback func() error) <span class="cov0" title="0">{
+        b.restartCallback = callback
+}</span>
+
+// SetLendingBot 設置借貸機器人引用
+func (b *Bot) SetLendingBot(lendingBot LendingBot) <span class="cov0" title="0">{
+        b.lendingBot = lendingBot
+}</span>
+
+// handleAuthentication 處理身份驗證
+func (b *Bot) handleAuthentication(chatID int64, text string) <span class="cov0" title="0">{
+        switch text </span>{
+        case "/auth":<span class="cov0" title="0">
+                b.sendMessage(chatID, "請輸入驗證 token：")</span>
+        case b.config.TelegramAuthToken:<span class="cov0" title="0">
+                b.setAuthenticated(chatID)
+                b.sendMessage(chatID, "驗證成功，現在可以傳送指令了")</span>
+        default:<span class="cov0" title="0">
+                b.sendMessage(chatID, "請先進行驗證，輸入 /auth 開始驗證流程")</span>
+        }
+}
+
+// handleCommand 處理指令
+func (b *Bot) handleCommand(chatID int64, text string) <span class="cov0" title="0">{
+        switch </span>{
+        case text == "/help" || text == "/start":<span class="cov0" title="0">
+                b.handleHelp(chatID)</span>
+        case text == "/restart":<span class="cov0" title="0">
+                b.handleRestart(chatID)</span>
+        case text == "/rate":<span class="cov0" title="0">
+                b.handleRate(chatID)</span>
+        case text == "/check":<span class="cov0" title="0">
+                b.handleCheck(chatID)</span>
+        case text == "/status":<span class="cov0" title="0">
+                b.handleStatus(chatID)</span>
+        case strings.HasPrefix(text, "/threshold "):<span class="cov0" title="0">
+                b.handleSetThreshold(chatID, text)</span>
+        case strings.HasPrefix(text, "/reserve "):<span class="cov0" title="0">
+                b.handleSetReserve(chatID, text)</span>
+        case strings.HasPrefix(text, "/orderlimit "):<span class="cov0" title="0">
+                b.handleSetOrderLimit(chatID, text)</span>
+        case strings.HasPrefix(text, "/mindailylendrate "):<span class="cov0" title="0">
+                b.handleSetMinDailyRate(chatID, text)</span>
+        case strings.HasPrefix(text, "/minloan "):<span class="cov0" title="0">
+                b.handleSetMinLoan(chatID, text)</span>
+        case strings.HasPrefix(text, "/maxloan "):<span class="cov0" title="0">
+                b.handleSetMaxLoan(chatID, text)</span>
+        case strings.HasPrefix(text, "/highholdrate "):<span class="cov0" title="0">
+                b.handleSetHighHoldRate(chatID, text)</span>
+        case strings.HasPrefix(text, "/highholdamount "):<span class="cov0" title="0">
+                b.handleSetHighHoldAmount(chatID, text)</span>
+        case strings.HasPrefix(text, "/highholdorders "):<span class="cov0" title="0">
+                b.handleSetHighHoldOrders(chatID, text)</span>
+        case strings.HasPrefix(text, "/raterangeincrease "):<span class="cov0" title="0">
+                b.handleSetRateRangeIncrease(chatID, text)</span>
+        case text == "/strategy":<span class="cov0" title="0">
+                b.handleStrategyStatus(chatID)</span>
+        case text == "/smartstrategy on":<span class="cov0" title="0">
+                b.handleToggleSmartStrategy(chatID, true)</span>
+        case text == "/smartstrategy off":<span class="cov0" title="0">
+                b.handleToggleSmartStrategy(chatID, false)</span>
+        case text == "/klinestrategy on":<span class="cov0" title="0">
+                b.handleToggleKlineStrategy(chatID, true)</span>
+        case text == "/klinestrategy off":<span class="cov0" title="0">
+                b.handleToggleKlineStrategy(chatID, false)</span>
+        case strings.HasPrefix(text, "/smoothmethod "):<span class="cov0" title="0">
+                b.handleSetSmoothMethod(chatID, text)</span>
+        case text == "/lending":<span class="cov0" title="0">
+                b.handleLendingCredits(chatID)</span>
+        default:<span class="cov0" title="0">
+                b.sendMessage(chatID, "無效的指令，輸入 /help 查看所有可用指令")</span>
+        }
+}
+
+// handleHelp 處理幫助指令
+func (b *Bot) handleHelp(chatID int64) <span class="cov0" title="0">{
+        helpText := `可用指令:
+
+📊 查詢指令:
+/rate - 顯示當前貸出利率和閾值
+/check - 檢查貸出利率是否超過閾值
+/status - 顯示系統狀態
+/strategy - 顯示當前策略狀態
+/lending - 查看當前活躍的借貸訂單
+
+⚙️ 設置指令:
+/threshold [數值] - 設置利率通知閾值
+/reserve [數值] - 設置不參與借貸的保留金額
+/orderlimit [數值] - 設置單次執行最大下單數量限制
+/mindailylendrate [數值] - 設置最低每日貸出利率
+/minloan [數值] - 設置單筆最小貸出金額
+/maxloan [數值] - 設置單筆最大貸出金額 (設為0無限制)
+/highholdrate [數值] - 設置高額持有策略的日利率
+/highholdamount [數值] - 設置高額持有策略的金額 (設為0關閉)
+/highholdorders [數值] - 設置高額持有策略的訂單數量
+/raterangeincrease [數值] - 設置利率範圍增加百分比 (0-100%)
+
+🧠 策略指令:
+/klinestrategy on - 啟用K線策略 (最高優先級)
+/klinestrategy off - 停用K線策略
+/smartstrategy on - 啟用智能策略 (中等優先級)
+/smartstrategy off - 停用智能策略
+/smoothmethod [方法] - 設置K線利率平滑方法 (max/sma/ema/hla/p90)
+
+🔄 控制指令:
+/restart - 手動重新啟動，清除所有訂單，重新運行
+/help - 顯示此幫助訊息
+
+💡 策略優先級: K線策略 &gt; 智能策略 &gt; 傳統策略`
+
+        b.sendMessage(chatID, helpText)
+}</span>
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package telegram
+
+import (
+        "fmt"
+        "strconv"
+        "strings"
+        "time"
+)
+
+// handleRate 處理利率查詢指令
+func (b *Bot) handleRate(chatID int64) <span class="cov0" title="0">{
+        rate, err := b.bitfinexClient.GetCurrentFundingRate(b.config.GetFundingSymbol())
+        if err != nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "取得貸出利率失敗")
+                return
+        }</span>
+
+        <span class="cov0" title="0">thresholdInfo := ""
+        if b.config.NotifyRateThreshold &gt; 0 </span><span class="cov0" title="0">{
+                thresholdInfo = fmt.Sprintf("\n目前設定的閾值為: %.4f%%", b.config.NotifyRateThreshold)
+        }</span>
+
+        <span class="cov0" title="0">message := fmt.Sprintf("目前貸出利率: %.4f%%%s",
+                b.rateConverter.DecimalDailyToPercentageDaily(rate), thresholdInfo)
+        b.sendMessage(chatID, message)</span>
+}
+
+// handleCheck 處理利率檢查指令
+func (b *Bot) handleCheck(chatID int64) <span class="cov0" title="0">{
+        if b.lendingBot == nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "❌ 借貸機器人未初始化")
+                return
+        }</span>
+
+        // 使用新的K線基礎檢查方法
+        <span class="cov0" title="0">exceeded, percentageRate, err := b.lendingBot.CheckRateThreshold()
+        if err != nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, fmt.Sprintf("❌ 取得利率數據失敗: %v", err))
+                return
+        }</span>
+
+        <span class="cov0" title="0">replyMsg := fmt.Sprintf("📊 利率閾值檢查報告\n\n")
+        replyMsg += fmt.Sprintf("🎯 檢查方式: 5分鐘K線最近12根高點\n")
+        replyMsg += fmt.Sprintf("📈 最高利率: %.4f%%\n", percentageRate)
+
+        replyMsg += fmt.Sprintf("🎚️ 設定閾值: %.4f%%\n\n", b.config.NotifyRateThreshold)
+
+        if exceeded </span><span class="cov0" title="0">{
+                replyMsg += "⚠️ 注意: 最近1小時最高利率已超過閾值!"
+        }</span> else<span class="cov0" title="0"> {
+                replyMsg += "✅ 最近1小時最高利率低於閾值"
+        }</span>
+
+        <span class="cov0" title="0">b.sendMessage(chatID, replyMsg)</span>
+}
+
+// handleStatus 處理狀態查詢指令
+func (b *Bot) handleStatus(chatID int64) <span class="cov0" title="0">{
+        // 獲取剩餘金額
+        availableFunds, err := b.bitfinexClient.GetFundingBalance(strings.ToUpper(b.config.Currency))
+        var balanceInfo string
+        if err != nil </span><span class="cov0" title="0">{
+                balanceInfo = fmt.Sprintf("剩餘金額: 獲取失敗 (%v)", err)
+        }</span> else<span class="cov0" title="0"> {
+                balanceInfo = fmt.Sprintf("💰 資金狀況:\n總餘額: %.2f %s",
+                        availableFunds, b.config.Currency)
+        }</span>
+
+        <span class="cov0" title="0">statusMsg := fmt.Sprintf("📊 系統狀態報告\n\n%s\n\n💱 基本設定:\n幣種: %s\n最小貸出金額: %.2f\n最大貸出金額: %.2f",
+                balanceInfo, b.config.Currency, b.config.MinLoan, b.config.MaxLoan)
+
+        // 添加保留金額信息
+        if b.config.ReserveAmount &gt; 0 </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n保留金額: %.2f", b.config.ReserveAmount)
+        }</span> else<span class="cov0" title="0"> {
+                statusMsg += "\n保留金額: 未設置"
+        }</span>
+
+        // 添加機器人運行參數
+        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n⚙️ 機器人參數:")
+        statusMsg += fmt.Sprintf("\n單次下單限制: %d", b.config.OrderLimit)
+        statusMsg += fmt.Sprintf("\n最低日利率: %.4f%%", b.config.MinDailyLendRate)
+        statusMsg += fmt.Sprintf("\n執行間隔: %d 分鐘", b.config.MinutesRun)
+
+        // 添加運行模式信息
+        if b.config.TestMode </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n\n🧪 運行模式: 測試模式 (模擬交易)")
+        }</span> else<span class="cov0" title="0"> {
+                statusMsg += fmt.Sprintf("\n\n🚀 運行模式: 正式模式 (真實交易)")
+        }</span>
+
+        // 添加高額持有策略信息
+        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n💎 高額持有策略:")
+        if b.config.HighHoldAmount &gt; 0 </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n金額: %.2f %s", b.config.HighHoldAmount, b.config.Currency)
+                statusMsg += fmt.Sprintf("\n日利率: %.4f%%", b.config.HighHoldRate)
+                statusMsg += fmt.Sprintf("\n訂單數量: %d", b.config.HighHoldOrders)
+        }</span> else<span class="cov0" title="0"> {
+                statusMsg += "\n未啟用"
+        }</span>
+
+        // 添加當前策略信息
+        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n🎯 當前策略:")
+        if b.config.EnableKlineStrategy </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\nK線策略 (啟用)")
+                statusMsg += fmt.Sprintf("\n時間框架: %s", b.config.KlineTimeFrame)
+                statusMsg += fmt.Sprintf("\n週期數: %d", b.config.KlinePeriod)
+                statusMsg += fmt.Sprintf("\n加成: %.1f%%", b.config.KlineSpreadPercent)
+        }</span> else<span class="cov0" title="0"> if b.config.EnableSmartStrategy </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n智能策略 (啟用)")
+                statusMsg += fmt.Sprintf("\n利率範圍增加: %.1f%%", b.config.RateRangeIncreasePercent*100)
+        }</span> else<span class="cov0" title="0"> {
+                statusMsg += fmt.Sprintf("\n傳統策略 (啟用)")
+        }</span>
+
+        // 添加利率範圍增加百分比 (對所有策略都適用)
+        <span class="cov0" title="0">if b.config.RateRangeIncreasePercent &gt; 0 </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n📊 利率範圍增加: %.1f%%", b.config.RateRangeIncreasePercent*100)
+        }</span>
+
+        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n💡 使用 /strategy 查看詳細策略狀態")
+
+        b.sendMessage(chatID, statusMsg)</span>
+}
+
+// handleSetThreshold 處理設置閾值指令
+func (b *Bot) handleSetThreshold(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /threshold [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">threshold, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || threshold &lt;= 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正數值")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.NotifyRateThreshold = threshold
+        b.sendMessage(chatID, fmt.Sprintf("閾值已設定為: %.4f%%", threshold))</span>
+}
+
+// handleSetReserve 處理設置保留金額指令
+func (b *Bot) handleSetReserve(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /reserve [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">reserve, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || reserve &lt; 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的非負數值")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.ReserveAmount = reserve
+        b.sendMessage(chatID, fmt.Sprintf("保留金額已設定為: %.2f", reserve))</span>
+}
+
+// handleSetOrderLimit 處理設置訂單限制指令
+func (b *Bot) handleSetOrderLimit(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /orderlimit [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">limit, err := strconv.Atoi(parts[1])
+        if err != nil || limit &lt; 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的非負整數")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.OrderLimit = limit
+        b.sendMessage(chatID, fmt.Sprintf("單次執行最大下單數量限制已設定為: %d", limit))</span>
+}
+
+// handleSetMinDailyRate 處理設置最低日利率指令
+func (b *Bot) handleSetMinDailyRate(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /mindailylendrate [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">rate, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || rate &lt;= 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正數值")
+                return
+        }</span>
+
+        <span class="cov0" title="0">if !b.rateConverter.ValidatePercentageRate(rate) </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "利率超出有效範圍 (0-7%)")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.MinDailyLendRate = rate
+        b.sendMessage(chatID, fmt.Sprintf("最低每日貸出利率已設定為: %.4f%%", rate))</span>
+}
+
+// handleSetMinLoan 處理設置最小貸出金額指令
+func (b *Bot) handleSetMinLoan(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /minloan [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">amount, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || amount &lt;= 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正數值")
+                return
+        }</span>
+
+        // 檢查是否小於等於最大貸出金額
+        <span class="cov0" title="0">if b.config.MaxLoan &gt; 0 &amp;&amp; amount &gt; b.config.MaxLoan </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, fmt.Sprintf("最小貸出金額不能大於最大貸出金額 (%.2f %s)", b.config.MaxLoan, b.config.Currency))
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.MinLoan = amount
+        b.sendMessage(chatID, fmt.Sprintf("✅ 最小貸出金額已設定為: %.2f %s", amount, b.config.Currency))</span>
+}
+
+// handleSetMaxLoan 處理設置最大貸出金額指令
+func (b *Bot) handleSetMaxLoan(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /maxloan [數值] 格式\n提示: 設置為 0 表示無限制")
+                return
+        }</span>
+
+        <span class="cov0" title="0">amount, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || amount &lt; 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的非負數值\n提示: 設置為 0 表示無限制")
+                return
+        }</span>
+
+        // 檢查是否大於等於最小貸出金額
+        <span class="cov0" title="0">if amount &gt; 0 &amp;&amp; amount &lt; b.config.MinLoan </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, fmt.Sprintf("最大貸出金額不能小於最小貸出金額 (%.2f %s)", b.config.MinLoan, b.config.Currency))
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.MaxLoan = amount
+
+        if amount == 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "✅ 最大貸出金額已設定為: 無限制")
+        }</span> else<span class="cov0" title="0"> {
+                b.sendMessage(chatID, fmt.Sprintf("✅ 最大貸出金額已設定為: %.2f %s", amount, b.config.Currency))
+        }</span>
+}
+
+// handleSetHighHoldRate 處理設置高額持有利率指令
+func (b *Bot) handleSetHighHoldRate(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /highholdrate [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">rate, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || rate &lt;= 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正數值")
+                return
+        }</span>
+
+        <span class="cov0" title="0">if !b.rateConverter.ValidatePercentageRate(rate) </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "利率超出有效範圍 (0-7%)")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.HighHoldRate = rate
+        b.sendMessage(chatID, fmt.Sprintf("高額持有策略的日利率已設定為: %.4f%%", rate))</span>
+}
+
+// handleSetHighHoldAmount 處理設置高額持有金額指令
+func (b *Bot) handleSetHighHoldAmount(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /highholdamount [數值] 格式\n提示: 設置為 0 可關閉高額持有策略")
+                return
+        }</span>
+
+        <span class="cov0" title="0">amount, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || amount &lt; 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的非負數值\n提示: 設置為 0 可關閉高額持有策略")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.HighHoldAmount = amount
+
+        if amount == 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "✅ 高額持有策略已關閉\n高額持有金額已設定為: 0.00")
+        }</span> else<span class="cov0" title="0"> {
+                b.sendMessage(chatID, fmt.Sprintf("✅ 高額持有策略已啟用\n高額持有金額已設定為: %.2f %s", amount, b.config.Currency))
+        }</span>
+}
+
+// handleSetHighHoldOrders 處理設置高額持有訂單數量指令
+func (b *Bot) handleSetHighHoldOrders(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /highholdorders [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">orders, err := strconv.Atoi(parts[1])
+        if err != nil || orders &lt; 1 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正整數")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.HighHoldOrders = orders
+        b.sendMessage(chatID, fmt.Sprintf("高額持有訂單數量已設定為: %d", orders))</span>
+}
+
+// handleSetRateRangeIncrease 處理設置利率範圍增加百分比指令
+func (b *Bot) handleSetRateRangeIncrease(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /raterangeincrease [數值] 格式")
+                return
+        }</span>
+
+        <span class="cov0" title="0">percentage, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil || percentage &lt;= 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "請輸入有效的正數值")
+                return
+        }</span>
+
+        // 驗證範圍 (0-100%)
+        <span class="cov0" title="0">if percentage &gt; 100.0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "利率範圍增加百分比不能超過 100%")
+                return
+        }</span>
+
+        // 轉換為小數形式 (0-1.0)
+        <span class="cov0" title="0">decimalValue := percentage / 100.0
+
+        b.config.RateRangeIncreasePercent = decimalValue
+        b.sendMessage(chatID, fmt.Sprintf("利率範圍增加百分比已設定為: %.2f%% (%.4f)", percentage, decimalValue))</span>
+}
+
+// handleRestart 處理重啟指令
+func (b *Bot) handleRestart(chatID int64) <span class="cov0" title="0">{
+        b.sendMessage(chatID, "🔄 開始手動重啟...")
+
+        if b.restartCallback == nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "❌ 重啟功能未初始化，請聯繫管理員")
+                return
+        }</span>
+
+        // 執行重啟邏輯
+        <span class="cov0" title="0">err := b.restartCallback()
+        if err != nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, fmt.Sprintf("❌ 重啟失敗: %v", err))
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.sendMessage(chatID, "✅ 重啟完成！所有訂單已清除並重新下單")</span>
+}
+
+// handleStrategyStatus 處理策略狀態查詢指令
+func (b *Bot) handleStrategyStatus(chatID int64) <span class="cov0" title="0">{
+        var strategyType string
+        var strategyPriority string
+
+        // 根據策略優先級確定當前啟用的策略
+        if b.config.EnableKlineStrategy </span><span class="cov0" title="0">{
+                strategyType = "K線策略 (啟用)"
+                strategyPriority = "最高優先級"
+        }</span> else<span class="cov0" title="0"> if b.config.EnableSmartStrategy </span><span class="cov0" title="0">{
+                strategyType = "智能策略 (啟用)"
+                strategyPriority = "中等優先級"
+        }</span> else<span class="cov0" title="0"> {
+                strategyType = "傳統策略 (啟用)"
+                strategyPriority = "預設策略"
+        }</span>
+
+        <span class="cov0" title="0">statusMsg := fmt.Sprintf("📊 當前策略狀態\n策略類型: %s\n優先級: %s", strategyType, strategyPriority)
+
+        // K線策略設定
+        if b.config.EnableKlineStrategy </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n\n📈 K線策略設定:")
+                statusMsg += fmt.Sprintf("\n時間框架: %s", b.config.KlineTimeFrame)
+                statusMsg += fmt.Sprintf("\nK線週期數: %d", b.config.KlinePeriod)
+                statusMsg += fmt.Sprintf("\n加成百分比: %.1f%%", b.config.KlineSpreadPercent)
+
+                // 添加平滑方法信息
+                smoothMethodDesc := getSmoothMethodDescription(b.config.KlineSmoothMethod)
+                statusMsg += fmt.Sprintf("\n利率平滑方法: %s - %s", b.config.KlineSmoothMethod, smoothMethodDesc)
+
+                // 計算分析時間範圍
+                var timeRange string
+                switch b.config.KlineTimeFrame </span>{
+                case "5m":<span class="cov0" title="0">
+                        minutes := float64(b.config.KlinePeriod) * 5
+                        timeRange = fmt.Sprintf("%.1f分鐘", minutes)</span>
+                case "15m":<span class="cov0" title="0">
+                        hours := float64(b.config.KlinePeriod) * 0.25
+                        timeRange = fmt.Sprintf("%.1f小時", hours)</span>
+                case "30m":<span class="cov0" title="0">
+                        hours := float64(b.config.KlinePeriod) * 0.5
+                        timeRange = fmt.Sprintf("%.1f小時", hours)</span>
+                case "1h":<span class="cov0" title="0">
+                        timeRange = fmt.Sprintf("%d小時", b.config.KlinePeriod)</span>
+                case "3h":<span class="cov0" title="0">
+                        hours := b.config.KlinePeriod * 3
+                        timeRange = fmt.Sprintf("%d小時", hours)</span>
+                case "6h":<span class="cov0" title="0">
+                        hours := b.config.KlinePeriod * 6
+                        timeRange = fmt.Sprintf("%d小時", hours)</span>
+                case "12h":<span class="cov0" title="0">
+                        days := float64(b.config.KlinePeriod) * 0.5
+                        timeRange = fmt.Sprintf("%.1f天", days)</span>
+                case "1D":<span class="cov0" title="0">
+                        timeRange = fmt.Sprintf("%d天", b.config.KlinePeriod)</span>
+                default:<span class="cov0" title="0">
+                        timeRange = "未知"</span>
+                }
+                <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n分析時間範圍: %s", timeRange)
+
+                statusMsg += fmt.Sprintf("\n\nK線策略功能:")
+                statusMsg += fmt.Sprintf("\n✅ 基於真實市場K線數據")
+                statusMsg += fmt.Sprintf("\n✅ 自動找尋最高利率")
+                statusMsg += fmt.Sprintf("\n✅ 智能加成計算")
+                statusMsg += fmt.Sprintf("\n✅ 分散風險貸出")
+                statusMsg += fmt.Sprintf("\n✅ 自動回退機制")
+
+                // 添加策略建議
+                statusMsg += fmt.Sprintf("\n\n📋 時間框架建議:")
+                statusMsg += fmt.Sprintf("\n⚡ 短期: 15m-30m (快速反應)")
+                statusMsg += fmt.Sprintf("\n⚖️ 中期: 1h-3h (平衡策略)")
+                statusMsg += fmt.Sprintf("\n🛡️ 長期: 6h-1D (穩定策略)")</span>
+        } else<span class="cov0" title="0"> if b.config.EnableSmartStrategy </span><span class="cov0" title="0">{
+                statusMsg += fmt.Sprintf("\n\n🧠 智能策略設定:")
+                statusMsg += fmt.Sprintf("\n波動率閾值: %.4f", b.config.VolatilityThreshold)
+                statusMsg += fmt.Sprintf("\n最大利率倍數: %.1fx", b.config.MaxRateMultiplier)
+                statusMsg += fmt.Sprintf("\n最小利率倍數: %.1fx", b.config.MinRateMultiplier)
+                statusMsg += fmt.Sprintf("\n利率範圍增加: %.1f%%", b.config.RateRangeIncreasePercent*100)
+
+                // 添加建議值提示
+                statusMsg += fmt.Sprintf("\n\n📋 參數建議值:")
+                statusMsg += fmt.Sprintf("\n🛡️ 保守: 波動率 0.001, 最大倍數 1.5x, 最小倍數 0.9x")
+                statusMsg += fmt.Sprintf("\n⚖️ 平衡: 波動率 0.002, 最大倍數 2.0x, 最小倍數 0.8x")
+                statusMsg += fmt.Sprintf("\n⚡ 激進: 波動率 0.003, 最大倍數 3.0x, 最小倍數 0.7x")
+
+                statusMsg += fmt.Sprintf("\n\n智能功能:")
+                statusMsg += fmt.Sprintf("\n✅ 動態利率調整")
+                statusMsg += fmt.Sprintf("\n✅ 市場趨勢分析")
+                statusMsg += fmt.Sprintf("\n✅ 智能期間選擇")
+                statusMsg += fmt.Sprintf("\n✅ 競爭對手分析")
+                statusMsg += fmt.Sprintf("\n✅ 自適應資金配置")
+        }</span> else<span class="cov0" title="0"> {
+                statusMsg += fmt.Sprintf("\n\n⚙️ 傳統策略設定:")
+                statusMsg += fmt.Sprintf("\n固定高額持有利率: %.4f%%", b.config.HighHoldRate)
+                statusMsg += fmt.Sprintf("\n固定分散貸出參數")
+                statusMsg += fmt.Sprintf("\n固定期間選擇邏輯")
+        }</span>
+
+        // 顯示策略優先級順序
+        <span class="cov0" title="0">statusMsg += fmt.Sprintf("\n\n🔄 策略優先級順序:")
+        statusMsg += fmt.Sprintf("\n1️⃣ K線策略 (%s)", getStrategyStatus(b.config.EnableKlineStrategy))
+        statusMsg += fmt.Sprintf("\n2️⃣ 智能策略 (%s)", getStrategyStatus(b.config.EnableSmartStrategy))
+        statusMsg += fmt.Sprintf("\n3️⃣ 傳統策略 (預設)")
+
+        statusMsg += fmt.Sprintf("\n\n💡 提示: 使用指令切換策略")
+        statusMsg += fmt.Sprintf("\n/klinestrategy on/off - 切換K線策略")
+        statusMsg += fmt.Sprintf("\n/smartstrategy on/off - 切換智能策略")
+
+        b.sendMessage(chatID, statusMsg)</span>
+}
+
+// getStrategyStatus 獲取策略狀態文字
+func getStrategyStatus(enabled bool) string <span class="cov0" title="0">{
+        if enabled </span><span class="cov0" title="0">{
+                return "啟用"
+        }</span>
+        <span class="cov0" title="0">return "停用"</span>
+}
+
+// handleToggleSmartStrategy 處理智能策略切換指令
+func (b *Bot) handleToggleSmartStrategy(chatID int64, enable bool) <span class="cov0" title="0">{
+        b.config.EnableSmartStrategy = enable
+
+        var message string
+        if enable </span><span class="cov0" title="0">{
+                // 如果啟用智能策略，自動關閉K線策略
+                b.config.EnableKlineStrategy = false
+
+                message = "✅ 智能策略已啟用\n\n智能功能:\n🧠 動態利率調整\n📈 市場趨勢分析\n⏰ 智能期間選擇\n🏆 競爭對手分析\n💰 自適應資金配置\n\nK線策略已自動停用\n下次執行時將使用智能策略"
+        }</span> else<span class="cov0" title="0"> {
+                message = "❌ 智能策略已停用\n\n已切換回其他策略:\n"
+                if b.config.EnableKlineStrategy </span><span class="cov0" title="0">{
+                        message += "📈 K線策略 (已啟用)\n"
+                }</span> else<span class="cov0" title="0"> {
+                        message += "⚙️ 傳統策略 (預設)\n"
+                }</span>
+                <span class="cov0" title="0">message += "\n下次執行時將使用相應策略"</span>
+        }
+
+        <span class="cov0" title="0">b.sendMessage(chatID, message)</span>
+}
+
+// handleToggleKlineStrategy 處理K線策略切換指令
+func (b *Bot) handleToggleKlineStrategy(chatID int64, enable bool) <span class="cov0" title="0">{
+        b.config.EnableKlineStrategy = enable
+
+        var message string
+        if enable </span><span class="cov0" title="0">{
+                // 如果啟用K線策略，自動關閉智能策略
+                b.config.EnableSmartStrategy = false
+
+                message = "✅ K線策略已啟用\n\n📈 K線策略功能:\n🎯 基於真實市場K線數據\n📊 自動找尋最高利率\n💡 智能加成計算\n🔄 分散風險貸出\n🛡️ 自動回退機制\n\n"
+                message += fmt.Sprintf("⚙️ 當前設定:\n")
+                message += fmt.Sprintf("時間框架: %s\n", b.config.KlineTimeFrame)
+                message += fmt.Sprintf("K線週期: %d\n", b.config.KlinePeriod)
+                message += fmt.Sprintf("加成百分比: %.1f%%\n", b.config.KlineSpreadPercent)
+                message += "\n智能策略已自動停用\n下次執行時將使用K線策略"
+        }</span> else<span class="cov0" title="0"> {
+                message = "❌ K線策略已停用\n\n已切換回其他策略:\n"
+                if b.config.EnableSmartStrategy </span><span class="cov0" title="0">{
+                        message += "🧠 智能策略 (已啟用)\n"
+                }</span> else<span class="cov0" title="0"> {
+                        message += "⚙️ 傳統策略 (預設)\n"
+                }</span>
+                <span class="cov0" title="0">message += "\n下次執行時將使用相應策略"</span>
+        }
+
+        <span class="cov0" title="0">b.sendMessage(chatID, message)</span>
+}
+
+// handleLendingCredits 處理借貸訂單查看指令
+func (b *Bot) handleLendingCredits(chatID int64) <span class="cov0" title="0">{
+        if b.lendingBot == nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "❌ 借貸機器人未初始化")
+                return
+        }</span>
+
+        <span class="cov0" title="0">credits, err := b.lendingBot.GetActiveLendingCredits()
+        if err != nil </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, fmt.Sprintf("❌ 獲取借貸訂單失敗: %v", err))
+                return
+        }</span>
+
+        <span class="cov0" title="0">if len(credits) == 0 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "📭 目前沒有活躍的借貸訂單")
+                return
+        }</span>
+
+        <span class="cov0" title="0">message := "💰 當前活躍的借貸訂單\n\n"
+
+        // 先計算所有訂單的統計信息
+        totalAmount := 0.0
+        totalDailyEarnings := 0.0
+        totalPeriodEarnings := 0.0
+
+        for _, credit := range credits </span><span class="cov0" title="0">{
+                dailyEarnings := credit.Amount * credit.Rate
+                periodEarnings := dailyEarnings * float64(credit.Period)
+
+                totalAmount += credit.Amount
+                totalDailyEarnings += dailyEarnings
+                totalPeriodEarnings += periodEarnings
+        }</span>
+
+        // 限制顯示數量，避免消息過長
+        <span class="cov0" title="0">displayCount := len(credits)
+        if displayCount &gt; 10 </span><span class="cov0" title="0">{
+                displayCount = 10
+        }</span>
+
+        <span class="cov0" title="0">for i := 0; i &lt; displayCount; i++ </span><span class="cov0" title="0">{
+                credit := credits[i]
+
+                // 計算收益
+                dailyEarnings := credit.Amount * credit.Rate
+                periodEarnings := dailyEarnings * float64(credit.Period)
+
+                // 格式化開始時間
+                openTime := time.Unix(credit.MTSOpened/1000, 0)
+
+                message += fmt.Sprintf("📊 訂單 #%d (ID: %d)\n", i+1, credit.ID)
+                message += fmt.Sprintf("💵 金額: %.2f %s\n", credit.Amount, b.config.Currency)
+                message += fmt.Sprintf("📈 日利率: %.4f%%\n", b.rateConverter.DecimalToPercentage(credit.Rate))
+                message += fmt.Sprintf("💰 日收益: %.4f %s\n", dailyEarnings, b.config.Currency)
+                message += fmt.Sprintf("⏰ 期間: %d 天\n", credit.Period)
+                message += fmt.Sprintf("💎 期間總收益: %.4f %s\n", periodEarnings, b.config.Currency)
+                message += fmt.Sprintf("🕐 開始時間: %s\n", openTime.Format("2006-01-02 15:04:05"))
+                message += fmt.Sprintf("📊 狀態: %s\n", credit.Status)
+                message += "\n"
+        }</span>
+
+        <span class="cov0" title="0">if len(credits) &gt; 10 </span><span class="cov0" title="0">{
+                message += fmt.Sprintf("... 還有 %d 個訂單未顯示\n\n", len(credits)-10)
+        }</span>
+
+        // 添加統計信息
+        <span class="cov0" title="0">message += fmt.Sprintf("📊 統計信息:\n")
+        message += fmt.Sprintf("📦 總訂單數: %d\n", len(credits))
+        message += fmt.Sprintf("💵 總借出金額: %.2f %s\n", totalAmount, b.config.Currency)
+        message += fmt.Sprintf("💰 每日總收益: %.4f %s\n", totalDailyEarnings, b.config.Currency)
+
+        if len(credits) &lt;= 10 </span><span class="cov0" title="0">{
+                message += fmt.Sprintf("💎 總期間收益: %.4f %s\n", totalPeriodEarnings, b.config.Currency)
+        }</span>
+
+        // 計算年化收益率
+        <span class="cov0" title="0">if totalAmount &gt; 0 </span><span class="cov0" title="0">{
+                annualRate := (totalDailyEarnings / totalAmount) * 365 * 100
+                message += fmt.Sprintf("📈 年化收益率: %.2f%%", annualRate)
+        }</span>
+
+        <span class="cov0" title="0">b.sendMessage(chatID, message)</span>
+}
+
+// handleSetSmoothMethod 處理設置平滑方法指令
+func (b *Bot) handleSetSmoothMethod(chatID int64, text string) <span class="cov0" title="0">{
+        parts := strings.Split(text, " ")
+        if len(parts) != 2 </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "格式錯誤，請使用 /smoothmethod [方法] 格式\n\n可用方法:\nmax - 最高值 (激進)\nsma - 簡單移動平均 (保守)\nema - 指數移動平均 (平滑敏感)\nhla - 高低點平均 (平衡)\np90 - 90百分位數 (避免極值)")
+                return
+        }</span>
+
+        <span class="cov0" title="0">method := strings.ToLower(parts[1])
+        validMethods := map[string]string{
+                "max": "最高值 (激進)",
+                "sma": "簡單移動平均 (保守)",
+                "ema": "指數移動平均 (平滑敏感)",
+                "hla": "高低點平均 (平衡)",
+                "p90": "90百分位數 (避免極值)",
+        }
+
+        description, isValid := validMethods[method]
+        if !isValid </span><span class="cov0" title="0">{
+                b.sendMessage(chatID, "無效的平滑方法，可用方法:\nmax - 最高值 (激進)\nsma - 簡單移動平均 (保守)\nema - 指數移動平均 (平滑敏感)\nhla - 高低點平均 (平衡)\np90 - 90百分位數 (避免極值)")
+                return
+        }</span>
+
+        <span class="cov0" title="0">b.config.KlineSmoothMethod = method
+        b.sendMessage(chatID, fmt.Sprintf("✅ K線利率平滑方法已設定為: %s - %s\n\n下次執行K線策略時將使用新的平滑方法", method, description))</span>
+}
+
+// getSmoothMethodDescription 獲取平滑方法的描述
+func getSmoothMethodDescription(method string) string <span class="cov0" title="0">{
+        descriptions := map[string]string{
+                "max": "最高值 (激進)",
+                "sma": "簡單移動平均 (保守)",
+                "ema": "指數移動平均 (平滑敏感)",
+                "hla": "高低點平均 (平衡)",
+                "p90": "90百分位數 (避免極值)",
+        }
+
+        if desc, exists := descriptions[method]; exists </span><span class="cov0" title="0">{
+                return desc
+        }</span>
+        <span class="cov0" title="0">return "未知方法"</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package main
+
+import (
+        "context"
+        "fmt"
+        "log"
+        "os"
+        "os/signal"
+        "sync"
+        "syscall"
+        "time"
+
+        "github.com/urfave/cli"
+
+        "github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+        "github.com/ApexLGF/BitfinexLBot/internal/config"
+        "github.com/ApexLGF/BitfinexLBot/internal/constants"
+        "github.com/ApexLGF/BitfinexLBot/internal/rates"
+        "github.com/ApexLGF/BitfinexLBot/internal/strategy"
+        "github.com/ApexLGF/BitfinexLBot/internal/telegram"
+)
+
+// Application 應用程式主結構
+type Application struct {
+        config        *config.Config
+        bfxClient     *bitfinex.Client
+        telegramBot   *telegram.Bot
+        lendingBot    *strategy.LendingBot
+        rateConverter *rates.Converter
+
+        // 併發控制
+        ctx    context.Context
+        cancel context.CancelFunc
+        wg     sync.WaitGroup
+}
+
+// NewApplication 創建新的應用程式實例
+func NewApplication(configPath string) (*Application, error) <span class="cov0" title="0">{
+        // 載入配置
+        cfg, err := config.LoadConfig(configPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to load config: %w", err)
+        }</span>
+
+        // 創建 Bitfinex 客戶端
+        <span class="cov0" title="0">bfxClient := bitfinex.NewClient(cfg.BitfinexApiKey, cfg.BitfinexSecretKey)
+
+        // 創建 Telegram 機器人
+        telegramBot, err := telegram.NewBot(cfg, bfxClient)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to create telegram bot: %w", err)
+        }</span>
+
+        // 創建貸出機器人
+        <span class="cov0" title="0">lendingBot := strategy.NewLendingBot(cfg, bfxClient)
+
+        // 創建利率轉換器
+        rateConverter := rates.NewConverter()
+
+        // 創建 context 和 cancel 函數
+        ctx, cancel := context.WithCancel(context.Background())
+
+        app := &amp;Application{
+                config:        cfg,
+                bfxClient:     bfxClient,
+                telegramBot:   telegramBot,
+                lendingBot:    lendingBot,
+                rateConverter: rateConverter,
+                ctx:           ctx,
+                cancel:        cancel,
+        }
+
+        // 設置 Telegram bot 重啟回調
+        telegramBot.SetRestartCallback(app.handleRestart)
+
+        // 設置借貸機器人的通知回調
+        lendingBot.SetNotifyCallback(telegramBot.SendNotification)
+
+        // 設置 Telegram bot 的借貸機器人引用
+        telegramBot.SetLendingBot(lendingBot)
+
+        return app, nil</span>
+}
+
+// Run 運行應用程式
+func (app *Application) Run() error <span class="cov0" title="0">{
+        log.Printf("Config loaded successfully: %+v", app.config)
+
+        // 顯示運行模式
+        if app.config.TestMode </span><span class="cov0" title="0">{
+                log.Println("🧪 === 測試模式啟動 ===")
+                log.Println("🧪 不會執行真實的下單操作")
+                log.Println("🧪 但會執行真實的取消操作")
+        }</span> else<span class="cov0" title="0"> {
+                log.Println("🚀 === 正式模式啟動 ===")
+                log.Println("🚀 將執行真實的交易操作")
+        }</span>
+
+        // 設置信號處理
+        <span class="cov0" title="0">sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+        // 啟動所有 goroutines
+        app.startWorkers()
+
+        log.Printf("Scheduler started at: %v", time.Now())
+        log.Printf("⚙️ 主要任務間隔: %d 分鐘", app.config.MinutesRun)
+        log.Printf("💰 借貸檢查間隔: %d 分鐘", app.config.LendingCheckMinutes)
+        log.Printf("📊 利率檢查: 每小時")
+        log.Println("🔄 按 Ctrl+C 優雅關閉...")
+
+        // 等待信號或 context 取消
+        select </span>{
+        case sig := &lt;-sigChan:<span class="cov0" title="0">
+                log.Printf("收到信號 %v，開始優雅關閉...", sig)</span>
+        case &lt;-app.ctx.Done():<span class="cov0" title="0">
+                log.Println("Context 被取消，開始關閉...")</span>
+        }
+
+        <span class="cov0" title="0">return app.shutdown()</span>
+}
+
+// startWorkers 啟動所有工作 goroutines
+func (app *Application) startWorkers() <span class="cov0" title="0">{
+        // 啟動 Telegram 機器人
+        app.wg.Add(1)
+        go app.runWorker("TelegramBot", func() </span><span class="cov0" title="0">{
+                defer app.wg.Done()
+                app.telegramBot.StartWithContext(app.ctx)
+        }</span>)
+
+        // 啟動每小時利率檢查
+        <span class="cov0" title="0">app.wg.Add(1)
+        go app.runWorker("HourlyRateCheck", func() </span><span class="cov0" title="0">{
+                defer app.wg.Done()
+                app.scheduleHourlyRateCheck()
+        }</span>)
+
+        // 啟動借貸訂單檢查
+        <span class="cov0" title="0">app.wg.Add(1)
+        go app.runWorker("LendingCheck", func() </span><span class="cov0" title="0">{
+                defer app.wg.Done()
+                app.scheduleLendingCheck()
+        }</span>)
+
+        // 啟動主要業務邏輯調度
+        <span class="cov0" title="0">app.wg.Add(1)
+        go app.runWorker("MainTask", func() </span><span class="cov0" title="0">{
+                defer app.wg.Done()
+                app.scheduleMainTask()
+        }</span>)
+}
+
+// runWorker 安全運行工作任務
+func (app *Application) runWorker(name string, worker func()) <span class="cov0" title="0">{
+        defer func() </span><span class="cov0" title="0">{
+                if r := recover(); r != nil </span><span class="cov0" title="0">{
+                        log.Printf("工作任務 %s 發生 panic: %v", name, r)
+                        // 可以在這裡添加重啟邏輯
+                }</span>
+        }()
+
+        <span class="cov0" title="0">log.Printf("啟動工作任務: %s", name)
+        worker()
+        log.Printf("工作任務 %s 已結束", name)</span>
+}
+
+// shutdown 優雅關閉應用程式
+func (app *Application) shutdown() error <span class="cov0" title="0">{
+        log.Println("正在關閉應用程式...")
+
+        // 取消 context
+        app.cancel()
+
+        // 等待所有 goroutines 結束，設置超時
+        done := make(chan struct{})
+        go func() </span><span class="cov0" title="0">{
+                app.wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov0" title="0">select </span>{
+        case &lt;-done:<span class="cov0" title="0">
+                log.Println("所有工作任務已優雅結束")</span>
+        case &lt;-time.After(constants.ShutdownTimeout):<span class="cov0" title="0">
+                log.Println("等待超時，強制結束")</span>
+        }
+
+        <span class="cov0" title="0">log.Println("應用程式已關閉")
+        return nil</span>
+}
+
+// scheduleMainTask 調度主要任務
+func (app *Application) scheduleMainTask() <span class="cov0" title="0">{
+        // 先執行第一次
+        app.executeMainTask()
+
+        ticker := time.NewTicker(time.Duration(app.config.MinutesRun) * time.Minute)
+        defer ticker.Stop()
+
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-app.ctx.Done():<span class="cov0" title="0">
+                        log.Println("主要任務調度器收到停止信號")
+                        return</span>
+                case &lt;-ticker.C:<span class="cov0" title="0">
+                        app.executeMainTask()</span>
+                }
+        }
+}
+
+// executeMainTask 執行主要任務
+func (app *Application) executeMainTask() <span class="cov0" title="0">{
+        if err := app.lendingBot.Execute(); err != nil </span><span class="cov0" title="0">{
+                log.Printf("執行貸出策略失敗: %v", err)
+        }</span>
+}
+
+// scheduleHourlyRateCheck 調度每小時利率檢查
+func (app *Application) scheduleHourlyRateCheck() <span class="cov0" title="0">{
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-app.ctx.Done():<span class="cov0" title="0">
+                        log.Println("利率檢查調度器收到停止信號")
+                        return</span>
+                default:<span class="cov0" title="0"></span>
+                }
+
+                <span class="cov0" title="0">now := time.Now()
+                next := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), constants.HourlyCheckMinute, 0, 0, now.Location())
+                if now.After(next) || now.Equal(next) </span><span class="cov0" title="0">{
+                        next = next.Add(time.Hour)
+                }</span>
+
+                <span class="cov0" title="0">delay := next.Sub(now)
+                log.Printf("下次執行時間: %s, 等待時間: %s", next.Format("2006-01-02 15:04:05"), delay)
+
+                // 使用 context 支持的 sleep
+                select </span>{
+                case &lt;-app.ctx.Done():<span class="cov0" title="0">
+                        log.Println("利率檢查調度器在等待中收到停止信號")
+                        return</span>
+                case &lt;-time.After(delay):<span class="cov0" title="0">
+                        app.checkRateThreshold()</span>
+                }
+        }
+}
+
+// checkRateThreshold 檢查利率閾值
+func (app *Application) checkRateThreshold() <span class="cov0" title="0">{
+        log.Println("定時檢查貸出利率（基於5分鐘K線12根高點）...")
+
+        exceeded, percentageRate, err := app.lendingBot.CheckRateThreshold()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("取得利率數據失敗: %v", err)
+                return
+        }</span>
+
+        <span class="cov0" title="0">log.Printf("最近1小時最高利率: %.4f%%, 閾值: %.4f%%", percentageRate, app.config.NotifyRateThreshold)
+
+        if exceeded </span><span class="cov0" title="0">{
+                message := fmt.Sprintf("⚠️ 定時檢查提醒: 最近1小時最高利率 %.4f%% 已超過閾值 %.4f%%\n\n📊 檢查方式: 5分鐘K線最近12根高點分析",
+                        percentageRate, app.config.NotifyRateThreshold)
+
+                if err := app.telegramBot.SendNotification(message); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("發送 Telegram 通知失敗: %v", err)
+                }</span> else<span class="cov0" title="0"> {
+                        log.Printf("成功發送利率提醒")
+                }</span>
+        } else<span class="cov0" title="0"> {
+                log.Println("最近1小時最高利率低於閾值，無需發送通知")
+        }</span>
+}
+
+// handleRestart 處理重啟請求
+func (app *Application) handleRestart() error <span class="cov0" title="0">{
+        log.Println("收到重啟請求，開始執行重啟邏輯...")
+
+        // 執行主要任務（這會取消所有訂單並重新下單）
+        if err := app.lendingBot.Execute(); err != nil </span><span class="cov0" title="0">{
+                log.Printf("重啟執行失敗: %v", err)
+                return fmt.Errorf("重啟執行失敗: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">log.Println("重啟完成！")
+        return nil</span>
+}
+
+// scheduleLendingCheck 調度借貸訂單檢查
+func (app *Application) scheduleLendingCheck() <span class="cov0" title="0">{
+        // 先執行第一次檢查
+        app.executeLendingCheck()
+
+        ticker := time.NewTicker(time.Duration(app.config.LendingCheckMinutes) * time.Minute)
+        defer ticker.Stop()
+
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-app.ctx.Done():<span class="cov0" title="0">
+                        log.Println("借貸檢查調度器收到停止信號")
+                        return</span>
+                case &lt;-ticker.C:<span class="cov0" title="0">
+                        app.executeLendingCheck()</span>
+                }
+        }
+}
+
+// executeLendingCheck 執行借貸訂單檢查
+func (app *Application) executeLendingCheck() <span class="cov0" title="0">{
+        if err := app.lendingBot.CheckNewLendingCredits(); err != nil </span><span class="cov0" title="0">{
+                log.Printf("檢查借貸訂單失敗: %v", err)
+        }</span>
+}
+
+func main() <span class="cov0" title="0">{
+        app := cli.NewApp()
+        app.Name = "bitfinex-lending-bot"
+        app.Version = "v2.0.0"
+        app.Usage = "Automated Bitfinex lending bot with v2 API"
+
+        app.Flags = []cli.Flag{
+                cli.StringFlag{
+                        Name:   "config, c",
+                        Value:  "config.yaml",
+                        Usage:  "Configuration file path",
+                        EnvVar: "CONFIG_PATH",
+                },
+        }
+
+        app.Action = func(c *cli.Context) error </span><span class="cov0" title="0">{
+                configPath := c.String("config")
+
+                application, err := NewApplication(configPath)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatalf("Failed to create application: %v", err)
+                }</span>
+
+                <span class="cov0" title="0">return application.Run()</span>
+        }
+
+        <span class="cov0" title="0">if err := app.Run(os.Args); err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("Application error: %v", err)
+        }</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
