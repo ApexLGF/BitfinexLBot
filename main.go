@@ -12,12 +12,12 @@ import (
 
 	"github.com/urfave/cli"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/bitfinex"
-	"github.com/kfrico/BitfinexLendingBot/internal/config"
-	"github.com/kfrico/BitfinexLendingBot/internal/constants"
-	"github.com/kfrico/BitfinexLendingBot/internal/rates"
-	"github.com/kfrico/BitfinexLendingBot/internal/strategy"
-	"github.com/kfrico/BitfinexLendingBot/internal/telegram"
+	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+	"github.com/ApexLGF/BitfinexLBot/internal/config"
+	"github.com/ApexLGF/BitfinexLBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/rates"
+	"github.com/ApexLGF/BitfinexLBot/internal/strategy"
+	"github.com/ApexLGF/BitfinexLBot/internal/telegram"
 )
 
 // Application 應用程式主結構
