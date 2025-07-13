@@ -3,8 +3,8 @@ package strategy
 import (
 	"testing"
 
-	"github.com/kfrico/BitfinexLendingBot/internal/bitfinex"
-	"github.com/kfrico/BitfinexLendingBot/internal/config"
+	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
+	"github.com/ApexLGF/BitfinexLBot/internal/config"
 )
 
 func TestSmartStrategy_CalculateOptimalAllocation(t *testing.T) {
