@@ -373,10 +373,29 @@ func (lb *LendingBot) CheckNewLendingCredits() error {
 	// 獲取當前時間戳（毫秒）
 	currentTime := time.Now().UnixNano() / int64(time.Millisecond)
 
-	// 如果這是第一次檢查（LastLendingCheckTime 為 0），初始化時間戳但不發送通知
+	// 如果這是第一次檢查（LastLendingCheckTime 為 0），檢查是否有最近60分鐘內的訂單
 	if lb.config.LastLendingCheckTime == 0 {
-		log.Printf("首次檢查，發現 %d 個現有的借貸訂單，初始化檢查時間戳", len(credits))
+		log.Printf("首次檢查，發現 %d 個現有的借貸訂單", len(credits))
+		
+		// 檢查是否有最近60分鐘內的訂單
+		recentThreshold := currentTime - (60 * 60 * 1000) // 60分鐘前的時間戳
+		var recentCredits []*bitfinex.FundingCredit
+		for _, credit := range credits {
+			if credit.MTSOpened > recentThreshold {
+				recentCredits = append(recentCredits, credit)
+			}
+		}
+		
+		// 初始化時間戳
 		lb.config.LastLendingCheckTime = currentTime
+		
+		// 如果有最近60分鐘內的訂單，發送通知
+		if len(recentCredits) > 0 {
+			log.Printf("發現 %d 個最近60分鐘內的借貸訂單，發送通知", len(recentCredits))
+			return lb.sendLendingNotification(recentCredits)
+		}
+		
+		log.Println("沒有最近60分鐘內的新訂單，初始化完成")
 		return nil
 	}
 
