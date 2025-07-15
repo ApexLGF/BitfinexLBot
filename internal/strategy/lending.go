@@ -376,7 +376,7 @@ func (lb *LendingBot) CheckNewLendingCredits() error {
 	// 如果這是第一次檢查（LastLendingCheckTime 為 0），檢查是否有最近60分鐘內的訂單
 	if lb.config.LastLendingCheckTime == 0 {
 		log.Printf("首次檢查，發現 %d 個現有的借貸訂單", len(credits))
-		
+
 		// 檢查是否有最近60分鐘內的訂單
 		recentThreshold := currentTime - (60 * 60 * 1000) // 60分鐘前的時間戳
 		var recentCredits []*bitfinex.FundingCredit
@@ -385,16 +385,16 @@ func (lb *LendingBot) CheckNewLendingCredits() error {
 				recentCredits = append(recentCredits, credit)
 			}
 		}
-		
+
 		// 初始化時間戳
 		lb.config.LastLendingCheckTime = currentTime
-		
+
 		// 如果有最近60分鐘內的訂單，發送通知
 		if len(recentCredits) > 0 {
 			log.Printf("發現 %d 個最近60分鐘內的借貸訂單，發送通知", len(recentCredits))
 			return lb.sendLendingNotification(recentCredits)
 		}
-		
+
 		log.Println("沒有最近60分鐘內的新訂單，初始化完成")
 		return nil
 	}
@@ -466,7 +466,7 @@ func (lb *LendingBot) sendLendingNotification(credits []*bitfinex.FundingCredit)
 	}
 
 	// 添加統計信息
-	message += fmt.Sprintf("📊 統計信息:\n")
+	message += "📊 統計信息:\n"
 	message += fmt.Sprintf("📦 總數量: %d 個訂單\n", len(credits))
 	message += fmt.Sprintf("💵 總金額: %.2f %s\n", totalAmount, lb.config.Currency)
 	message += fmt.Sprintf("💰 總預期收益: %.4f %s\n", totalEarnings, lb.config.Currency)

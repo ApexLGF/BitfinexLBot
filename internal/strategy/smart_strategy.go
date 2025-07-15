@@ -447,9 +447,10 @@ func (ss *SmartStrategy) calculateSmartPeriod(dailyRate float64, condition *Mark
 	switch condition.Trend {
 	case "rising":
 		// 利率上升趨勢，偏向短期以便重新定價
-		if basePeriod == constants.Period120Days {
+		switch basePeriod {
+		case constants.Period120Days:
 			basePeriod = constants.Period30Days
-		} else if basePeriod == constants.Period30Days {
+		case constants.Period30Days:
 			basePeriod = constants.DefaultPeriodDays
 		}
 
