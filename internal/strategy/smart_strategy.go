@@ -336,13 +336,6 @@ func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.Fundin
 		}
 	}
 
-	if len(rates) == 0 {
-		// 沒有符合最小利率的數據，使用合成利率
-		baseRate := minDailyRate
-		increment := baseRate * ss.config.RateRangeIncreasePercent * float64(orderIndex)
-		return baseRate + increment
-	}
-
 	// 找出利率範圍
 	minRate := rates[0]
 	maxRate := rates[0]
@@ -353,6 +346,14 @@ func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.Fundin
 		if rate > maxRate {
 			maxRate = rate
 		}
+	}
+
+	if len(rates) == 0 || (maxRate-minRate) < 0.001 {
+		// 沒有符合最小利率的數據，使用合成利率
+		baseRate := minDailyRate
+		increment := baseRate * ss.config.RateRangeIncreasePercent * float64(orderIndex)
+		log.Printf("funding中利率差距小于 0.1%%，使用合成利率: %.6f%%", (baseRate+increment)*100)
+		return baseRate + increment
 	}
 
 	log.Printf("Funding Book 利率分析 - 有效利率數量: %d, 原始範圍: %.6f%%-%.6f%%",
