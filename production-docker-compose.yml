@@ -1,0 +1,127 @@
+services:
+  # 现有的 Nginx 服务
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/html:/var/www/html
+      - ./nginx/php:/var/www/php  # PHP 文件目录
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      # 添加 BitfinexBot Web 界面支持
+      - ./bitfinex-bot/web:/var/www/bitfinex-bot  # BitfinexBot Web 界面
+    environment:
+      - PHP_HOST=php-fpm  # PHP-FPM 服务名
+    depends_on:
+      - php-fpm
+      - bitfinex-bot  # 添加对 BitfinexBot 的依赖
+    networks:
+      - default
+    restart: always
+
+  # 现有的 PHP-FPM 服务
+  php-fpm:
+    image: php:8.3-fpm
+    container_name: php-fpm
+    volumes:
+      - ./nginx/html:/var/www/html  # HTML 代码目录
+      - ./nginx/php:/var/www/php   # PHP 代码目录
+      # 添加 BitfinexBot Web 界面支持
+      - ./bitfinex-bot/web:/var/www/bitfinex-bot  # BitfinexBot Web 界面
+    environment:
+      - UPLOAD_MAX_SIZE=10M
+      - PHP_MEMORY_LIMIT=128M
+    networks:
+      - default
+    restart: always
+    command: >
+      sh -c "docker-php-ext-install pdo pdo_mysql mysqli &&
+             php-fpm"
+
+  # 现有的 MySQL 服务 - 需要修改以支持 BitfinexBot
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: appdb
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+      # 添加 BitfinexBot 数据库支持
+      MYSQL_MULTIPLE_DATABASES: appdb,bitfinex_bot_db
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      # 添加 BitfinexBot 数据库初始化脚本
+      - ./bitfinex-bot/database/schema.sql:/docker-entrypoint-initdb.d/bitfinex-schema.sql
+      - ./bitfinex-bot/database/mysql.cnf:/etc/mysql/conf.d/bitfinex.cnf
+      - ./docker-scripts/create-multiple-databases.sh:/docker-entrypoint-initdb.d/create-multiple-databases.sh
+    ports:
+      - "3306:3306"  # 添加端口映射以便 BitfinexBot 连接
+    networks:
+      - default
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # 新增 BitfinexBot 服务
+  bitfinex-bot:
+    image: apexlgf/bitfenix-bot:latest
+    container_name: bitfinex-bot
+    restart: unless-stopped
+    volumes:
+      - ./bitfinex-bot/config.yaml:/app/config.yaml
+      - ./bitfinex-bot/logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - TZ=Asia/Shanghai
+    command: ["./bitfinex-bot", "-c", "/app/config.yaml"]
+
+  # 现有的 Wetty Web终端服务
+  wetty:
+    image: wettyoss/wetty:latest
+    container_name: wetty-terminal
+    ports:
+      - "3000:3000"
+    command: ["--host", "0.0.0.0", "--port", "3000", "--ssh-host", "host.docker.internal", "--ssh-port", "22", "--title", "Web Terminal"]
+    environment:
+      - WETTY_SSH_HOST=host.docker.internal
+      - WETTY_SSH_PORT=22
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+    restart: always
+    depends_on:
+      - nginx
+
+  # 可选：添加 phpMyAdmin 用于数据库管理
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "8081:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
