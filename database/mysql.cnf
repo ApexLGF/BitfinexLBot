@@ -1,0 +1,41 @@
+[mysqld]
+# 字符集配置
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+init_connect = 'SET NAMES utf8mb4'
+
+# 性能优化
+innodb_buffer_pool_size = 256M
+innodb_redo_log_capacity = 134217728  # 128MB, 替代过时的 innodb_log_file_size
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# 连接设置
+max_connections = 200
+max_connect_errors = 1000
+connect_timeout = 60
+wait_timeout = 28800
+
+# 查询缓存（MySQL 8.0 中已移除）
+# query_cache_size = 32M
+# query_cache_type = 1
+
+# 日志设置
+general_log = 0
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
+
+# 二进制日志
+log_bin = mysql-bin
+binlog_expire_logs_seconds = 604800  # 7天 = 7*24*60*60秒
+max_binlog_size = 100M
+
+# SQL 模式
+sql_mode = STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
+
+[mysql]
+default-character-set = utf8mb4
+
+[client]
+default-character-set = utf8mb4

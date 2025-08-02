@@ -1,10 +1,16 @@
 package bitfinex
 
 import (
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
@@ -17,13 +23,27 @@ import (
 // Client Bitfinex API 客戶端封裝
 type Client struct {
 	restClient *rest.Client
+	key        string
+	secret     string
+	nonceGen   *CustomNonceGenerator // 保存nonce生成器用于直接HTTP调用
 }
 
-// NewClient 創建新的 Bitfinex 客戶端
+// NewClient 創建新的 Bitfinex 客戶端，使用自定义的线程安全nonce生成器
 func NewClient(apiKey, secretKey string) *Client {
-	client := rest.NewClient().Credentials(apiKey, secretKey)
+	// 创建自定义nonce生成器，使用较大的步长以避免高频API调用时的nonce冲突
+	// 步长100适合高频交易场景，进一步减少nonce冲突
+	nonceGen := NewCustomNonceGeneratorWithStep(100)
+	
+	// 使用自定义nonce生成器创建客户端  
+	// 使用认证端点URL: https://api.bitfinex.com/v2/ (用于认证API调用)
+	client := rest.NewClientWithURLNonce("https://api.bitfinex.com/v2/", nonceGen)
+	client = client.Credentials(apiKey, secretKey)
+	
 	return &Client{
 		restClient: client,
+		key:        apiKey,
+		secret:     secretKey,
+		nonceGen:   nonceGen, // 保存nonce生成器用于直接HTTP调用
 	}
 }
 
@@ -75,8 +95,11 @@ type Candle struct {
 
 // GetFundingOffers 獲取未完成的資金貸出訂單
 func (c *Client) GetFundingOffers(symbol string) ([]*FundingOffer, error) {
+	// 获取资金订单（日志已移除）
 	offers, err := c.restClient.Funding.Offers(symbol)
+	
 	if err != nil {
+		log.Printf("❌ GetFundingOffers 错误: %v", err)
 		// 處理特殊的空響應錯誤
 		if strings.Contains(err.Error(), "data slice too short for funding offer") {
 			return []*FundingOffer{}, nil
@@ -141,6 +164,7 @@ func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate flo
 
 // GetWallets 獲取錢包信息
 func (c *Client) GetWallets() ([]*Wallet, error) {
+	// 获取钱包信息
 	wallets, err := c.restClient.Wallet.Wallet()
 	if err != nil {
 		return nil, errors.NewAPIError("failed to get wallets", err)
@@ -157,6 +181,23 @@ func (c *Client) GetWallets() ([]*Wallet, error) {
 	}
 
 	return result, nil
+}
+
+// GetTotalBalance 獲取指定幣種的總錢包餘額（所有錢包類型的總和）
+func (c *Client) GetTotalBalance(currency string) (float64, error) {
+	wallets, err := c.GetWallets()
+	if err != nil {
+		return 0, err
+	}
+
+	totalBalance := 0.0
+	for _, wallet := range wallets {
+		if wallet.Currency == currency {
+			totalBalance += wallet.Balance
+		}
+	}
+
+	return totalBalance, nil
 }
 
 // GetFundingBalance 獲取指定幣種的資金錢包餘額
@@ -243,6 +284,13 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 
 // GetFundingCredits 獲取活躍的借貸訂單
 func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
+	// 首先嘗試使用直接API調用獲取更多記錄
+	allCredits, err := c.getFundingCreditsWithLimit(symbol, 100) // 嘗試獲取100條記錄
+	if err == nil && len(allCredits) > 0 {
+		return allCredits, nil
+	}
+
+	// 如果直接API調用失敗，回退到使用Go庫的方法
 	credits, err := c.restClient.Funding.Credits(symbol)
 	if err != nil {
 		// 處理特殊的空響應錯誤
@@ -273,6 +321,97 @@ func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 			MTSOpened:  credit.MTSOpened,
 			Status:     credit.Status,
 		})
+	}
+
+	return result, nil
+}
+
+// getFundingCreditsWithLimit 使用直接HTTP請求獲取funding credits，支持limit參數
+func (c *Client) getFundingCreditsWithLimit(symbol string, limit int) ([]*FundingCredit, error) {
+	// 構建API URL - 使用Bitfinex API v2直接端點
+	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/funding/credits/%s?limit=%d", symbol, limit)
+
+	// 創建HTTP請求
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 添加認證頭 - 使用客户端的nonce生成器（与SDK统一）
+	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
+	body := ""
+	payload := fmt.Sprintf("/api/v2/auth/r/funding/credits/%s%d%s", symbol, timestamp, body)
+	
+	// 計算簽名
+	h := hmac.New(sha512.New384, []byte(c.secret))
+	h.Write([]byte(payload))
+	signature := hex.EncodeToString(h.Sum(nil))
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("bfx-nonce", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("bfx-apikey", c.key)
+	req.Header.Set("bfx-signature", signature)
+
+	// 發送請求
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 讀取響應
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// 解析JSON響應
+	var rawCredits [][]interface{}
+	if err := json.Unmarshal(bodyBytes, &rawCredits); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// 轉換為FundingCredit結構
+	result := make([]*FundingCredit, 0, len(rawCredits))
+	for _, raw := range rawCredits {
+		if len(raw) < 15 { // Bitfinex funding credit響應至少需要15個字段
+			continue
+		}
+
+		// 安全地轉換每個字段
+		credit := &FundingCredit{}
+		
+		if id, ok := raw[0].(float64); ok {
+			credit.ID = int64(id)
+		}
+		if symbol, ok := raw[1].(string); ok {
+			credit.Symbol = symbol
+		}
+		if amount, ok := raw[5].(float64); ok {
+			credit.Amount = amount
+		}
+		if rate, ok := raw[11].(float64); ok {
+			credit.Rate = rate
+		}
+		if period, ok := raw[12].(float64); ok {
+			credit.Period = int64(period)
+		}
+		if mtsCreated, ok := raw[3].(float64); ok {
+			credit.MTSCreated = int64(mtsCreated)
+		}
+		if mtsOpened, ok := raw[4].(float64); ok {
+			credit.MTSOpened = int64(mtsOpened)
+		}
+		if status, ok := raw[10].(string); ok {
+			credit.Status = status
+		}
+
+		result = append(result, credit)
 	}
 
 	return result, nil
@@ -353,4 +492,168 @@ func (c *Client) GetFundingCandles(symbol string, timeFrame string, limit int) (
 	}
 
 	return candles, nil
+}
+
+// LedgerEntry 代表账本条目
+type LedgerEntry struct {
+	ID          int64   `json:"id"`
+	Currency    string  `json:"currency"`
+	Amount      float64 `json:"amount"`
+	Balance     float64 `json:"balance"`
+	Description string  `json:"description"`
+	Timestamp   int64   `json:"timestamp"`
+}
+
+// GetDailyFundingEarnings 获取指定日期的资金借贷收益
+func (c *Client) GetDailyFundingEarnings(currency string, date time.Time) (float64, error) {
+	// 计算24小时时间范围：从指定日期开始到现在
+	startTime := date
+	endTime := time.Now().UTC()
+	
+	// 转换为毫秒时间戳
+	start := startTime.UnixNano() / 1e6
+	end := endTime.UnixNano() / 1e6
+	
+	// 构建API URL
+	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/ledgers/%s/hist", currency)
+	
+	// 构建请求体，包含时间范围限制
+	requestBody := fmt.Sprintf(`{"start": %d, "end": %d, "limit": 1000}`, start, end)
+	
+	// 创建HTTP请求 - 使用POST方法（Bitfinex认证API要求POST）
+	req, err := http.NewRequest("POST", url, strings.NewReader(requestBody))
+	if err != nil {
+		return 0, errors.NewAPIError("failed to create request", err)
+	}
+	
+	// 设置认证头 - 使用客户端的nonce生成器（与SDK统一）
+	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
+	apiPath := fmt.Sprintf("/api/v2/auth/r/ledgers/%s/hist", currency)
+	payload := fmt.Sprintf("%s%d%s", apiPath, timestamp, requestBody)
+	
+	mac := hmac.New(sha512.New384, []byte(c.secret))
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("bfx-nonce", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("bfx-apikey", c.key)
+	req.Header.Set("bfx-signature", signature)
+	
+	// 发送请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, errors.NewAPIError("failed to get ledger entries", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d: %s", resp.StatusCode, string(body)), nil)
+	}
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
+		return 0, errors.NewAPIError("failed to decode ledger response", err)
+	}
+	
+	// 计算资金借贷收益总和
+	// Bitfinex API v2 响应格式: [ID, CURRENCY, WALLET, MTS, null, AMOUNT, BALANCE, null, DESCRIPTION]
+	totalEarnings := 0.0
+	for _, raw := range rawData {
+		if len(raw) < 9 {
+			continue
+		}
+		
+		// 检查描述字段是否包含资金收益相关信息 (索引8是DESCRIPTION)
+		if description, ok := raw[8].(string); ok {
+			if strings.Contains(description, "Margin Funding Payment") || strings.Contains(description, "Funding Payment") {
+				// 索引5是AMOUNT
+				if amount, ok := raw[5].(float64); ok && amount > 0 {
+					totalEarnings += amount
+				}
+			}
+		}
+	}
+	
+	return totalEarnings, nil
+}
+
+// GetWeeklyFundingEarnings 获取过去7天的资金借贷收益
+func (c *Client) GetWeeklyFundingEarnings(currency string) (float64, error) {
+	// 计算时间范围：过去7天
+	endTime := time.Now().UTC()
+	startTime := endTime.AddDate(0, 0, -7)
+	
+	// 转换为毫秒时间戳
+	start := startTime.UnixNano() / 1e6
+	end := endTime.UnixNano() / 1e6
+	
+	// 构建API URL
+	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/ledgers/%s/hist", currency)
+	
+	// 构建请求体
+	requestBody := fmt.Sprintf(`{"start": %d, "end": %d, "limit": 2000}`, start, end)
+	
+	// 创建HTTP请求
+	req, err := http.NewRequest("POST", url, strings.NewReader(requestBody))
+	if err != nil {
+		return 0, errors.NewAPIError("failed to create request", err)
+	}
+	
+	// 设置认证头 - 使用客户端的nonce生成器（与SDK统一）
+	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
+	apiPath := fmt.Sprintf("/api/v2/auth/r/ledgers/%s/hist", currency)
+	payload := fmt.Sprintf("%s%d%s", apiPath, timestamp, requestBody)
+	
+	mac := hmac.New(sha512.New384, []byte(c.secret))
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("bfx-nonce", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("bfx-apikey", c.key)
+	req.Header.Set("bfx-signature", signature)
+	
+	// 发送请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, errors.NewAPIError("failed to get ledger entries", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d: %s", resp.StatusCode, string(body)), nil)
+	}
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
+		return 0, errors.NewAPIError("failed to decode ledger response", err)
+	}
+	
+	// 计算资金借贷收益总和
+	// Bitfinex API v2 响应格式: [ID, CURRENCY, WALLET, MTS, null, AMOUNT, BALANCE, null, DESCRIPTION]
+	totalEarnings := 0.0
+	for _, raw := range rawData {
+		if len(raw) < 9 {
+			continue
+		}
+		
+		// 检查描述字段是否包含资金收益相关信息 (索引8是DESCRIPTION)
+		if description, ok := raw[8].(string); ok {
+			if strings.Contains(description, "Margin Funding Payment") || strings.Contains(description, "Funding Payment") {
+				// 索引5是AMOUNT
+				if amount, ok := raw[5].(float64); ok && amount > 0 {
+					totalEarnings += amount
+				}
+			}
+		}
+	}
+	
+	return totalEarnings, nil
 }

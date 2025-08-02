@@ -32,6 +32,11 @@ func NewLendingBot(cfg *config.Config, client *bitfinex.Client) *LendingBot {
 	}
 }
 
+// GetClient 獲取 Bitfinex 客戶端
+func (lb *LendingBot) GetClient() *bitfinex.Client {
+	return lb.client
+}
+
 // LoanOffer 代表一個貸出訂單
 type LoanOffer struct {
 	Amount float64

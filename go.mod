@@ -4,6 +4,7 @@ go 1.23.4
 
 require (
 	github.com/bitfinexcom/bitfinex-api-go v0.0.0-20210608095005-9e0b26f200fb
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible
 	github.com/spf13/viper v1.19.0
 	github.com/urfave/cli v1.22.16

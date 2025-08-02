@@ -18,7 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **核心模块**:
 - `internal/config`: 使用 Viper 的配置管理（YAML 配置 + 环境变量）
 - `internal/strategy`: 放贷策略实现和市场分析
-- `internal/bitfinex`: Bitfinex API v2 REST 客户端封装
+- `internal/bitfinex`: Bitfinex API v2 REST 客户端封装，包含线程安全的nonce生成器
+- `internal/database`: MySQL 数据库客户端和命令处理系统
 - `internal/telegram`: Telegram 机器人集成，用于监控和配置
 - `internal/rates`: 利率计算和转换工具
 - `internal/constants`: 应用常量和枚举
@@ -38,8 +39,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 make dev                          # 开发模式（启用测试模式）
 make build                        # 构建可执行文件
+make build-linux                  # 构建 Linux 可执行文件
 make run                          # 使用生产配置运行
 go run . -c config.yaml           # 直接用 Go 运行
+./bitfinex-lending-bot -c config.yaml  # 运行已构建的二进制文件
 ```
 
 **测试**:
@@ -48,7 +51,8 @@ make test                         # 运行完整测试套件（包含覆盖率�
 make test-quick                   # 快速测试（不含覆盖率）
 make test-verbose                 # 详细测试输出
 ./test.sh                         # 运行完整测试脚本
-go test ./... -v                  # 手动运行测试
+./test_integration.sh             # 运行集成测试
+go test ./internal/strategy -v -run TestSmartStrategy  # 运行特定测试
 ```
 
 **代码格式化和验证**:
@@ -56,8 +60,18 @@ go test ./... -v                  # 手动运行测试
 make format                       # 格式化代码
 make lint                         # 静态分析
 make mod-tidy                     # 清理依赖
+make security-check               # 检查敏感信息泄漏
 gofmt -w .                        # 格式化所有 Go 文件
 go vet ./...                      # 静态分析
+```
+
+**Docker 开发**:
+```bash
+docker compose up -d              # 启动所有服务
+docker compose down               # 停止所有服务
+docker compose build --no-cache   # 强制重新构建镜像
+docker compose logs bitfinex-bot  # 查看机器人日志
+docker compose restart bitfinex-bot # 重启机器人服务
 ```
 
 **其他工具**:
@@ -85,15 +99,23 @@ make release                      # 构建发布包
 
 ```
 BitfinexLendingBot/
-├── main.go                    # 应用程序入口点
+├── main.go                    # 应用程序入口点，Application 结构体协调所有服务
 ├── config.yaml               # 配置文件
+├── docker-compose.yml         # Docker 服务编排
+├── Dockerfile                # Go 应用容器化配置
 ├── Makefile                  # 构建和开发命令
 ├── test.sh                   # 测试运行脚本
 ├── go.mod                    # Go 模块依赖
+├── database/                 # 数据库相关文件
+│   ├── schema.sql           # MySQL 数据库结构
+│   └── mysql.cnf            # MySQL 配置
+├── web/                     # Web 管理界面
+│   └── index.html           # 主页面 (Bootstrap + JavaScript)
 └── internal/                 # 内部包
-    ├── bitfinex/            # Bitfinex API 客户端
+    ├── bitfinex/            # Bitfinex API 客户端，包含自定义nonce生成器
     ├── config/              # 配置管理
     ├── constants/           # 应用常量
+    ├── database/            # 数据库客户端和命令处理
     ├── errors/              # 错误定义
     ├── rates/               # 利率转换工具
     ├── strategy/            # 放贷策略
@@ -103,33 +125,40 @@ BitfinexLendingBot/
 ## 关键模块参考
 
 **主应用程序**:
-- `main.go` - 应用程序入口点和 CLI 处理
-- `Application` 结构体 - 主应用程序协调器，支持优雅关闭
+- `main.go:24` - Application 结构体定义，协调所有服务
+- `main.go:39` - NewApplication() - 应用程序初始化流程
+- `main.go:85` - Run() - 主运行循环和优雅关闭处理
 
 **策略实现**:
-- `strategy.LendingBot` - 核心放贷策略引擎
-- `strategy.SmartStrategy` - 高级智能策略
-- `strategy.MarketAnalyzer` - 市场深度和趋势分析
-- `strategy.GetLoanOffers()` - 计算最优放贷订单
+- `strategy.LendingBot` - 核心放贷策略引擎，在 `internal/strategy/lending.go`
+- `strategy.SmartStrategy` - 高级智能策略，在 `internal/strategy/smart_strategy.go`
+- `strategy.MarketAnalyzer` - 市场深度和趋势分析，在 `internal/strategy/market_analyzer.go`
+- `strategy.GetLoanOffers()` - 计算最优放贷订单，入口函数
 
 **Bitfinex API 集成**:
-- `bitfinex.Client` - Bitfinex API v2 REST 客户端封装
+- `bitfinex.Client` - Bitfinex API v2 REST 客户端封装，在 `internal/bitfinex/client.go`
+- `bitfinex.CustomNonceGenerator` - 线程安全的nonce生成器，在 `internal/bitfinex/nonce.go`
 - `bitfinex.GetFundingOffers()` - 获取活跃的资金订单
-- `bitfinex.CancelAllOffers()` - 取消所有资金订单
-- `bitfinex.GetAvailableFunds()` - 获取钱包余额
-- `bitfinex.GetLendingRate()` - 获取当前资金利率
+- `bitfinex.GetFundingCredits()` - 获取借贷记录，支持直接HTTP调用
+- `bitfinex.GetDailyFundingEarnings()` - 获取24小时收益，带时间范围过滤
+- `bitfinex.GetWeeklyFundingEarnings()` - 获取1周收益
+- `bitfinex.GetCurrentFundingRate()` - 获取当前资金利率
 
 **Telegram 机器人**:
-- `telegram.Bot` - Telegram 机器人接口
-- `telegram.HandleMessage()` - 处理传入消息
-- `telegram.SendNotification()` - 发送通知
-- 通过聊天命令进行动态配置更新
+- `telegram.Bot` - Telegram 机器人接口（注：已被重构为数据库命令系统）
+- `database.CommandHandler` - 异步命令处理系统，替代直接Telegram交互
+- `database.SaveNotification()` - 通知存储系统
+
+**数据库系统**:
+- `database.Client` - MySQL 数据库客户端，连接管理在 `internal/database/database.go`
+- `database.CommandHandler` - 异步命令处理系统，在 `internal/database/command_handler.go`
+- `database.BotStatus` - 机器人状态管理和持久化
 
 **配置和工具**:
-- `config.LoadConfig()` - 加载和验证配置
-- `rates.Converter` - 利率转换工具
-- `constants` - 应用常量和枚举
-- `errors` - 统一错误定义
+- `config.LoadConfig()` - 加载和验证配置，在 `internal/config/config.go`
+- `rates.Converter` - 利率转换工具，在 `internal/rates/converter.go`
+- `constants` - 应用常量和枚举，在 `internal/constants/constants.go`
+- `errors` - 统一错误定义，在 `internal/errors/errors.go`
 
 ## 测试
 
@@ -151,7 +180,26 @@ go test ./... -v -race -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
 ```
 
-## V2 API 重要变更
+## Docker 架构
+
+**服务组件**:
+- `bitfinex-bot`: Go 应用主服务，处理放贷策略和API调用
+- `mysql`: MySQL 8.0 数据库，存储状态、命令和通知
+- `web`: Nginx + PHP 8.1 Web 管理界面 (端口 8080)
+- `phpmyadmin`: 数据库管理界面 (端口 8081)
+
+**服务访问**:
+```bash
+http://localhost:8080    # Web 管理界面
+http://localhost:8081    # phpMyAdmin 数据库管理
+```
+
+**重要Docker注意事项**:
+- 修改代码后必须使用 `docker compose build --no-cache` 强制重新构建
+- 使用 `docker compose down` 完全停止服务，然后重新启动以确保应用最新代码
+- 数据库数据持久化在 `mysql_data` volume 中
+
+## Bitfinex API v2 重要变更
 
 - 资金符号使用 "f" 前缀（例如 "fUSD" 而不是 "USD"）
 - 资金订单通过 `client.Funding.Offers(symbol)` 访问
@@ -159,14 +207,56 @@ go tool cover -html=coverage.out -o coverage.html
 - 资金簿通过 `client.Book.All(symbol, precision, limit)` 访问
 - 利率值是日利率（在 v2 API 中不是年化利率）
 
-## 开发技巧
+**Nonce 管理重要说明**:
+- 使用自定义 `CustomNonceGenerator` 确保线程安全
+- 初始值使用微秒级时间戳: `time.Now().UnixNano() / 1000`
+- 可配置递增步长（默认100）避免高频API调用冲突
+- 所有API调用（SDK和直接HTTP）使用统一nonce生成器实例
 
+## 开发技巧与故障排除
+
+**常用调试命令**:
+```bash
+# 查看实时日志
+docker compose logs -f bitfinex-bot
+
+# 检查数据库状态
+docker compose exec mysql mysql -u root -p bitfinex_bot -e "SELECT * FROM bot_status;"
+
+# 测试API连接
+go run . -c config.yaml --dry-run
+
+# 查看配置文件验证结果
+go run . -c config.yaml --validate-config
+```
+
+**常见错误处理**:
+- **Nonce错误**: 检查 `internal/bitfinex/nonce.go` 中的步长配置，减少并发请求
+- **API限流**: 调整 `config.yaml` 中的 `REQUEST_INTERVAL` 参数
+- **数据库连接失败**: 确认 MySQL 容器已启动，检查 `DATABASE_DSN` 配置
+- **配置验证失败**: 使用 `make config-example` 重新生成配置模板
+
+**性能优化建议**:
 - 使用 `make dev` 进行开发，启用测试模式
 - 提交更改前使用 `make test`
-- 配置更改可以通过 Telegram 机器人实时进行
+- Docker开发时，代码修改后必须重新构建: `docker compose down && docker compose build --no-cache && docker compose up -d`
+- 配置更改可以通过 Web界面管理 (http://localhost:8080)
 - 运行测试后检查 `coverage.html` 进行覆盖率分析
 - 使用 `make security-check` 验证提交中无敏感数据
-- 原始单文件版本保存为 `backup/main_original.go`
+- Web界面提供实时状态监控，包括24小时/1周收益展示
+- 收益数据每小时自动更新，避免频繁API调用影响性能
+
+**测试最佳实践**:
+- 单元测试：专注于 `internal/` 目录下的业务逻辑
+- 集成测试：使用 `test_integration.sh` 验证完整工作流
+- 性能测试：使用 `go test -bench` 测试策略计算性能
+- 覆盖率目标：核心业务逻辑保持 >80% 测试覆盖率
+
+**配置验证检查点**:
+- 验证 API 密钥格式 (以 `Bfx` 开头)
+- 检查利率范围 (建议 0.0001-0.1 日利率)
+- 确认 Telegram Chat ID 为数字格式
+- 验证数据库连接字符串格式
 
 ## 安全注意事项
 

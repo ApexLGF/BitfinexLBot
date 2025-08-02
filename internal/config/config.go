@@ -1,12 +1,26 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 	"github.com/spf13/viper"
 )
+
+// DatabaseConfig 數據庫配置結構
+type DatabaseConfig struct {
+	Host            string `mapstructure:"host"`
+	Port            int    `mapstructure:"port"`
+	Username        string `mapstructure:"username"`
+	Password        string `mapstructure:"password"`
+	Database        string `mapstructure:"database"`
+	Charset         string `mapstructure:"charset"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime string `mapstructure:"conn_max_lifetime"`
+}
 
 // Config 應用程式配置結構
 type Config struct {
@@ -37,10 +51,6 @@ type Config struct {
 	HighHoldAmount float64 `mapstructure:"HIGH_HOLD_AMOUNT"`
 	HighHoldOrders int     `mapstructure:"HIGH_HOLD_ORDERS"`
 
-	// Telegram 設定
-	TelegramBotToken  string `mapstructure:"TELEGRAM_BOT_TOKEN"`
-	TelegramAuthToken string `mapstructure:"TELEGRAM_AUTH_TOKEN"`
-
 	// 通知設定
 	NotifyRateThreshold float64 `mapstructure:"NOTIFY_RATE_THRESHOLD"`
 	ReserveAmount       float64 `mapstructure:"RESERVE_AMOUNT"`
@@ -65,6 +75,9 @@ type Config struct {
 	// 借貸通知設定
 	LastLendingCheckTime int64 // 上次檢查借貸訂單的時間戳
 	LendingCheckMinutes  int   `mapstructure:"LENDING_CHECK_MINUTES"` // 借貸訂單檢查間隔（分鐘）
+
+	// 數據庫配置
+	Database DatabaseConfig `mapstructure:"database"`
 }
 
 // LoadConfig 從文件加載配置
@@ -259,4 +272,27 @@ func (c *Config) setLendingCheckDefaults() {
 	if c.LendingCheckMinutes == 0 {
 		c.LendingCheckMinutes = 10
 	}
+}
+
+// GetDatabaseDSN 獲取數據庫連接字符串
+func (c *Config) GetDatabaseDSN() string {
+	// 設置默認值
+	if c.Database.Host == "" {
+		c.Database.Host = "localhost"
+	}
+	if c.Database.Port == 0 {
+		c.Database.Port = 3306
+	}
+	if c.Database.Charset == "" {
+		c.Database.Charset = "utf8mb4"
+	}
+
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=true&loc=Local",
+		c.Database.Username,
+		c.Database.Password,
+		c.Database.Host,
+		c.Database.Port,
+		c.Database.Database,
+		c.Database.Charset,
+	)
 }

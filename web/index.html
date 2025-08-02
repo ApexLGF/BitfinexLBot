@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitfinexBot 管理面板</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .status-running { color: #198754; }
+        .status-stopped { color: #dc3545; }
+        .status-error { color: #fd7e14; }
+        .status-maintenance { color: #6c757d; }
+        
+        .command-card { 
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .command-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .notification-item {
+            border-left: 4px solid #dee2e6;
+        }
+        .notification-item.level-error { border-left-color: #dc3545; }
+        .notification-item.level-warning { border-left-color: #ffc107; }
+        .notification-item.level-success { border-left-color: #198754; }
+        .notification-item.level-info { border-left-color: #0dcaf0; }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        /* 命令结果表格优化 */
+        #commandsTable td {
+            vertical-align: top;
+        }
+        
+        .command-result {
+            max-height: 120px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: 'Courier New', monospace;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 0;
+        }
+        
+        .command-result.error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        
+        /* 借贷订单表格样式 */
+        .table-sm td, .table-sm th {
+            padding: 0.4rem 0.5rem;
+            vertical-align: middle;
+        }
+        
+        .badge-sm {
+            font-size: 0.7em;
+            padding: 0.25em 0.5em;
+        }
+        
+        .badge-success {
+            background-color: #28a745 !important;
+        }
+        
+        .badge-secondary {
+            background-color: #6c757d !important;
+        }
+        
+        /* 紧凑汇总样式 */
+        .lending-summary {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
+        
+        /* 表格行悬停效果 */
+        .table-hover tbody tr:hover {
+            background-color: rgba(0,123,255,.075);
+        }
+        
+        /* 响应式表格优化 */
+        @media (max-width: 768px) {
+            .table-responsive table {
+                font-size: 0.85rem;
+            }
+            
+            .table-responsive th,
+            .table-responsive td {
+                padding: 0.3rem 0.4rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-robot"></i> BitfinexBot 管理面板
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text" id="serverTime">
+                    <i class="bi bi-clock"></i> <span id="currentTime">--:--:--</span>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 状态概览 -->
+        <div class="row mb-4">
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-activity fs-1"></i>
+                        <h5 class="card-title mt-2">机器人状态</h5>
+                        <p class="card-text fs-4" id="botStatus">加载中...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-wallet fs-1"></i>
+                        <h5 class="card-title mt-2">总钱包金额</h5>
+                        <p class="card-text fs-4" id="totalBalance">加载中...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-wallet2 fs-1"></i>
+                        <h5 class="card-title mt-2">可用余额</h5>
+                        <p class="card-text fs-4" id="availableBalance">加载中...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-list-check fs-1"></i>
+                        <h5 class="card-title mt-2">活跃挂单数</h5>
+                        <p class="card-text fs-4" id="activeOrders">加载中...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-percent fs-1"></i>
+                        <h5 class="card-title mt-2">当前利率</h5>
+                        <p class="card-text fs-4" id="currentRate">加载中...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-bank fs-1"></i>
+                        <h5 class="card-title mt-2">24小时/1周收益</h5>
+                        <p class="card-text fs-4" id="totalEarnings">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-controller"></i> 机器人控制
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100 command-card" onclick="sendCommand('start')">
+                                    <i class="bi bi-play-fill"></i> 启动
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-warning w-100 command-card" onclick="sendCommand('stop')">
+                                    <i class="bi bi-stop-fill"></i> 停止
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-info w-100 command-card" onclick="sendCommand('restart')">
+                                    <i class="bi bi-arrow-clockwise"></i> 重启
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100 command-card" onclick="sendCommand('balance')">
+                                    <i class="bi bi-wallet"></i> 查询余额
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100 command-card" onclick="sendCommand('rates')">
+                                    <i class="bi bi-graph-up"></i> 查询利率
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100 command-card" onclick="loadLendingOrders()">
+                                    <i class="bi bi-list-ul"></i> 查看借贷
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-danger w-100 command-card" onclick="sendCommand('cancel_all')">
+                                    <i class="bi bi-x-circle"></i> 取消所有订单
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-secondary w-100 command-card" onclick="sendCommand('rate_check')">
+                                    <i class="bi bi-search"></i> 利率检查
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-bell"></i> 最新通知
+                        </h5>
+                    </div>
+                    <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                        <div id="notificationsList">
+                            <div class="text-center text-muted">
+                                <i class="bi bi-inbox"></i>
+                                <p>加载通知中...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 借贷订单信息 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-bank"></i> 已成交借贷订单
+                        </h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadLendingOrders()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新借贷
+                        </button>
+                    </div>
+                    <div class="card-body" id="lendingOrdersSection">
+                        <div class="text-center text-muted p-4">
+                            <i class="bi bi-hourglass-split"></i> 点击刷新按钮加载订单信息
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近命令 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-clock-history"></i> 最近命令
+                        </h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadCommands()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 50px;">ID</th>
+                                        <th style="width: 100px;">命令类型</th>
+                                        <th style="width: 80px;">状态</th>
+                                        <th style="width: 140px;">提交时间</th>
+                                        <th style="width: 140px;">完成时间</th>
+                                        <th style="min-width: 200px;">结果</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="commandsTable">
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">
+                                            <i class="bi bi-hourglass-split"></i> 加载命令历史中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // API 基础URL
+        const API_BASE = './api/index.php';
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBotStatus();
+            loadNotifications();
+            loadCommands();
+            
+            // 每30秒刷新状态
+            setInterval(loadBotStatus, 30000);
+            
+            // 每分钟刷新通知和命令
+            setInterval(loadNotifications, 60000);
+            setInterval(loadCommands, 60000);
+            
+            // 更新时间显示
+            updateTime();
+            setInterval(updateTime, 1000);
+        });
+        
+        // 更新时间显示
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+        }
+        
+        // 加载机器人状态
+        async function loadBotStatus() {
+            try {
+                const response = await fetch(`${API_BASE}?endpoint=status&action=bot`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.data;
+                    updateStatusDisplay(status);
+                } else {
+                    showToast('错误', data.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Failed to load bot status:', error);
+                showToast('错误', '无法加载机器人状态', 'danger');
+            }
+        }
+        
+        // 更新状态显示
+        function updateStatusDisplay(status) {
+            console.log('更新状态显示:', status); // 调试日志
+            
+            const statusElement = document.getElementById('botStatus');
+            statusElement.textContent = status.status_text || status.status;
+            statusElement.className = `card-text fs-4 status-${status.status}`;
+            
+            // 处理总钱包余额
+            const totalBalance = parseFloat(status.total_balance) || 0;
+            document.getElementById('totalBalance').textContent = `$${totalBalance.toFixed(4)}`;
+            
+            // 处理可用余额
+            const availableBalance = parseFloat(status.available_balance) || 0;
+            document.getElementById('availableBalance').textContent = `$${availableBalance.toFixed(4)}`;
+            console.log('余额处理:', status.available_balance, '->', availableBalance);
+            
+            // 处理活跃挂单数
+            const orders = parseInt(status.active_orders) || 0;
+            document.getElementById('activeOrders').textContent = orders;
+            
+            // 处理利率
+            const rate = parseFloat(status.current_rate) || 0;
+            const annualRate = (rate * 365 * 100).toFixed(4);
+            document.getElementById('currentRate').textContent = `${annualRate}%`;
+            console.log('利率处理:', status.current_rate, '->', rate, '->', annualRate + '%');
+            
+            // 处理1日/1周收益
+            const dailyEarnings = parseFloat(status.total_earned) || 0;
+            const weeklyEarnings = parseFloat(status.weekly_earned) || 0;
+            document.getElementById('totalEarnings').textContent = `$${dailyEarnings.toFixed(2)}/$${weeklyEarnings.toFixed(2)}`;
+        }
+        
+        // 发送命令
+        async function sendCommand(commandType) {
+            const button = event.target.closest('button');
+            const originalContent = button.innerHTML;
+            
+            // 显示加载状态
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> 处理中...';
+            button.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}?endpoint=commands`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'submit',
+                        command_type: commandType
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('成功', `命令 ${commandType} 已提交`, 'success');
+                    loadCommands(); // 刷新命令列表
+                } else {
+                    showToast('错误', data.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Failed to send command:', error);
+                showToast('错误', '命令发送失败', 'danger');
+            } finally {
+                // 恢复按钮状态
+                button.innerHTML = originalContent;
+                button.disabled = false;
+            }
+        }
+        
+        // 加载通知
+        async function loadNotifications() {
+            try {
+                const response = await fetch(`${API_BASE}?endpoint=status&action=notifications&limit=5`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayNotifications(data.data.notifications);
+                }
+            } catch (error) {
+                console.error('Failed to load notifications:', error);
+            }
+        }
+        
+        // 显示通知
+        function displayNotifications(notifications) {
+            const container = document.getElementById('notificationsList');
+            
+            if (notifications.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted">
+                        <i class="bi bi-inbox"></i>
+                        <p>暂无通知</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = notifications.map(notification => `
+                <div class="notification-item level-${notification.level} p-2 mb-2 rounded">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${notification.title}</strong>
+                            <p class="mb-1 small">${notification.message}</p>
+                            <small class="text-muted">${new Date(notification.created_at).toLocaleString()}</small>
+                        </div>
+                        <span class="badge bg-${getLevelColor(notification.level)}">${notification.type}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 获取通知级别颜色
+        function getLevelColor(level) {
+            const colors = {
+                error: 'danger',
+                warning: 'warning',
+                success: 'success',
+                info: 'info'
+            };
+            return colors[level] || 'secondary';
+        }
+        
+        // 加载命令历史
+        async function loadCommands() {
+            try {
+                const response = await fetch(`${API_BASE}?endpoint=commands&action=list&limit=10`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCommands(data.data.commands);
+                }
+            } catch (error) {
+                console.error('Failed to load commands:', error);
+            }
+        }
+        
+        // 显示命令历史
+        function displayCommands(commands) {
+            const tbody = document.getElementById('commandsTable');
+            
+            if (commands.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">
+                            <i class="bi bi-inbox"></i> 暂无命令历史
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = commands.map(command => `
+                <tr>
+                    <td>${command.id}</td>
+                    <td>
+                        <span class="badge bg-primary">${command.command_type}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-${getStatusColor(command.status)}">${getStatusText(command.status)}</span>
+                    </td>
+                    <td>${new Date(command.created_at).toLocaleString()}</td>
+                    <td>${command.completed_at ? new Date(command.completed_at).toLocaleString() : '-'}</td>
+                    <td>
+                        ${command.result ? 
+                            `<div class="command-result small">${escapeHtml(command.result)}</div>` : 
+                            (command.error_message ? 
+                                `<div class="command-result error small">${escapeHtml(command.error_message)}</div>` : 
+                                '<span class="text-muted">-</span>'
+                            )
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // 获取状态颜色
+        function getStatusColor(status) {
+            const colors = {
+                pending: 'warning',
+                processing: 'info',  
+                completed: 'success',
+                failed: 'danger'
+            };
+            return colors[status] || 'secondary';
+        }
+        
+        // 获取状态文本
+        function getStatusText(status) {
+            const texts = {
+                pending: '等待中',
+                processing: '处理中',
+                completed: '已完成', 
+                failed: '失败'
+            };
+            return texts[status] || status;
+        }
+        
+        // 显示 Toast 通知
+        function showToast(title, message, type = 'info') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toastId = 'toast-' + Date.now();
+            
+            const toastHtml = `
+                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header">
+                        <i class="bi bi-${getToastIcon(type)} text-${type} me-2"></i>
+                        <strong class="me-auto">${title}</strong>
+                        <small>刚刚</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+            
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement);
+            toast.show();
+            
+            // 自动清理
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        }
+        
+        // 获取 Toast 图标
+        function getToastIcon(type) {
+            const icons = {
+                success: 'check-circle',
+                danger: 'exclamation-triangle',
+                warning: 'exclamation-triangle',
+                info: 'info-circle'
+            };
+            return icons[type] || 'info-circle';
+        }
+        
+        // 加载借贷订单信息
+        async function loadLendingOrders() {
+            const section = document.getElementById('lendingOrdersSection');
+            section.innerHTML = `
+                <div class="text-center p-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <p class="mt-2 text-muted">正在获取订单信息...</p>
+                </div>
+            `;
+            
+            try {
+                // 提交credits命令
+                const response = await fetch(`${API_BASE}?endpoint=commands`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'submit',
+                        command_type: 'credits'
+                    })
+                });
+                
+                const commandResult = await response.json();
+                
+                if (!commandResult.success) {
+                    throw new Error(commandResult.error);
+                }
+                
+                const commandId = commandResult.data.command_id;
+                
+                // 轮询检查命令执行状态
+                await pollCommandResult(commandId);
+                
+            } catch (error) {
+                console.error('Failed to load lending orders:', error);
+                showOrderError('加载订单失败: ' + error.message);
+            }
+        }
+        
+        // 轮询检查命令执行结果
+        async function pollCommandResult(commandId, maxAttempts = 10) {
+            const section = document.getElementById('lendingOrdersSection');
+            
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                    // 等待1秒再检查
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // 检查特定命令的状态
+                    const statusResponse = await fetch(`${API_BASE}?endpoint=commands&action=status&id=${commandId}`);
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.success) {
+                        const command = statusData.data;
+                        
+                        if (command.status === 'completed') {
+                            if (command.result) {
+                                displayLendingOrders(command.result);
+                                return;
+                            } else {
+                                throw new Error('命令执行成功但无返回数据');
+                            }
+                        } else if (command.status === 'failed') {
+                            throw new Error(command.error_message || '命令执行失败');
+                        }
+                        // 如果状态是 pending 或 processing，继续轮询
+                    }
+                    
+                    // 更新加载提示
+                    section.innerHTML = `
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2 text-muted">正在执行命令... (${attempt + 1}/${maxAttempts})</p>
+                        </div>
+                    `;
+                    
+                } catch (error) {
+                    console.error('Error polling command result:', error);
+                    showOrderError('获取命令结果失败: ' + error.message);
+                    return;
+                }
+            }
+            
+            // 超时
+            showOrderError('命令执行超时，请稍后重试');
+        }
+        
+        // 显示借贷订单信息
+        function displayLendingOrders(resultJson) {
+            try {
+                const data = JSON.parse(resultJson);
+                const section = document.getElementById('lendingOrdersSection');
+                
+                if (data.credits && data.credits.length > 0) {
+                    section.innerHTML = `
+                        <!-- 紧凑的借贷汇总 -->
+                        <div class="bg-light border rounded p-3 mb-3">
+                            <div class="row g-3">
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-primary fs-5">${data.total_count}</div>
+                                    <small class="text-muted">总借贷数</small>
+                                </div>
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-success fs-5">${data.active_count}</div>
+                                    <small class="text-muted">活跃借贷</small>
+                                </div>
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-info fs-5">$${parseFloat(data.total_amount).toFixed(2)}</div>
+                                    <small class="text-muted">借出总额</small>
+                                </div>
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-warning fs-5">${parseFloat(data.annual_rate).toFixed(3)}%</div>
+                                    <small class="text-muted">平均年利率</small>
+                                </div>
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-success fs-5">$${parseFloat(data.total_earning).toFixed(4)}</div>
+                                    <small class="text-muted">累计收益</small>
+                                </div>
+                                <div class="col-6 col-md-2 text-center">
+                                    <div class="fw-bold text-info fs-5">$${(parseFloat(data.total_amount) * parseFloat(data.avg_rate)).toFixed(4)}</div>
+                                    <small class="text-muted">预计日收益</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 借贷订单表格 -->
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 8%;">状态</th>
+                                        <th style="width: 12%;" class="text-end">借出金额</th>
+                                        <th style="width: 10%;" class="text-end">年化利率</th>
+                                        <th style="width: 8%;" class="text-center">期限</th>
+                                        <th style="width: 12%;" class="text-end">预计收益</th>
+                                        <th style="width: 15%;">开始时间</th>
+                                        <th style="width: 15%;">最后付息</th>
+                                        <th style="width: 20%;">订单ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.credits.map(credit => `
+                                        <tr>
+                                            <td>
+                                                <span class="badge ${credit.Status === 'ACTIVE' ? 'badge-success' : 'badge-secondary'} badge-sm">
+                                                    ${credit.Status}
+                                                </span>
+                                            </td>
+                                            <td class="text-end fw-semibold">$${parseFloat(credit.Amount).toFixed(2)}</td>
+                                            <td class="text-end text-success fw-semibold">${(parseFloat(credit.Rate) * 365 * 100).toFixed(3)}%</td>
+                                            <td class="text-center">${credit.Period}天</td>
+                                            <td class="text-end text-info">$${(parseFloat(credit.Amount) * parseFloat(credit.Rate) * credit.Period).toFixed(4)}</td>
+                                            <td class="small">${new Date(credit.MTSOpened).toLocaleString('zh-CN', {
+                                                month: '2-digit',
+                                                day: '2-digit', 
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })}</td>
+                                            <td class="small">${credit.MtsLastPayout ? 
+                                                new Date(credit.MtsLastPayout).toLocaleString('zh-CN', {
+                                                    month: '2-digit',
+                                                    day: '2-digit',
+                                                    hour: '2-digit', 
+                                                    minute: '2-digit'
+                                                }) : '-'
+                                            }</td>
+                                            <td class="small text-muted">#${credit.ID}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                } else {
+                    section.innerHTML = `
+                        <div class="text-center p-4">
+                            <i class="bi bi-inbox fs-1 text-muted"></i>
+                            <h5 class="mt-3 text-muted">暂无借贷记录</h5>
+                            <p class="text-muted">当前没有已成交的借贷订单</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to parse orders data:', error);
+                showOrderError('解析订单数据失败');
+            }
+        }
+        
+        // 显示订单加载错误
+        function showOrderError(message) {
+            const section = document.getElementById('lendingOrdersSection');
+            section.innerHTML = `
+                <div class="text-center p-4">
+                    <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
+                    <h5 class="mt-3 text-warning">加载失败</h5>
+                    <p class="text-muted">${message}</p>
+                    <button class="btn btn-primary btn-sm" onclick="loadLendingOrders()">
+                        <i class="bi bi-arrow-clockwise"></i> 重试
+                    </button>
+                </div>
+            `;
+        }
+        
+        // HTML转义函数
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        
+        // 测试函数
+        function testUpdate() {
+            const testData = {
+                available_balance: "0.00837922",
+                active_orders: 0,
+                current_rate: "0.000274",
+                status: "running",
+                status_text: "运行中"
+            };
+            updateStatusDisplay(testData);
+            console.log('执行了测试更新');
+            alert('测试数据已更新！检查页面是否显示正确。');
+        }
+    </script>
+    
+    <!-- 调试按钮 -->
+    <div class="fixed-bottom p-3">
+        <button class="btn btn-sm btn-warning" onclick="loadBotStatus()">手动刷新</button>
+        <button class="btn btn-sm btn-info" onclick="testUpdate()">测试更新</button>
+    </div>
+</body>
+</html>
