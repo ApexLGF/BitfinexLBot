@@ -33,6 +33,10 @@ type Application struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// 配置热更新
+	configUpdateChan chan *config.Config
+	configPath       string
 }
 
 // NewApplication 創建新的應用程式實例
@@ -65,15 +69,20 @@ func NewApplication(configPath string) (*Application, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	app := &Application{
-		config:         cfg,
-		bfxClient:      bfxClient,
-		lendingBot:     lendingBot,
-		rateConverter:  rateConverter,
-		dbClient:       dbClient,
-		commandHandler: commandHandler,
-		ctx:            ctx,
-		cancel:         cancel,
+		config:           cfg,
+		bfxClient:        bfxClient,
+		lendingBot:       lendingBot,
+		rateConverter:    rateConverter,
+		dbClient:         dbClient,
+		commandHandler:   commandHandler,
+		ctx:              ctx,
+		cancel:           cancel,
+		configUpdateChan: make(chan *config.Config, 1),
+		configPath:       configPath,
 	}
+
+	// 设置配置更新器，建立CommandHandler和Application的关联
+	commandHandler.SetConfigUpdater(app)
 
 	return app, nil
 }
@@ -159,6 +168,13 @@ func (app *Application) startWorkers() {
 	go app.runWorker("MainTask", func() {
 		defer app.wg.Done()
 		app.scheduleMainTask()
+	})
+
+	// 啟動配置热更新监听器
+	app.wg.Add(1)
+	go app.runWorker("ConfigHotReload", func() {
+		defer app.wg.Done()
+		app.listenForConfigUpdates()
 	})
 }
 
@@ -328,6 +344,82 @@ func (app *Application) scheduleLendingCheck() {
 func (app *Application) executeLendingCheck() {
 	if err := app.lendingBot.CheckNewLendingCredits(); err != nil {
 		log.Printf("檢查借貸訂單失敗: %v", err)
+	}
+}
+
+// listenForConfigUpdates 监听配置更新事件
+func (app *Application) listenForConfigUpdates() {
+	log.Println("启动配置热更新监听器")
+
+	for {
+		select {
+		case <-app.ctx.Done():
+			log.Println("配置热更新监听器收到停止信号")
+			return
+		case newConfig := <-app.configUpdateChan:
+			log.Println("收到配置更新信号，开始热重载...")
+			if err := app.hotReloadConfig(newConfig); err != nil {
+				log.Printf("配置热重载失败: %v", err)
+			} else {
+				log.Println("配置热重载成功完成！")
+			}
+		}
+	}
+}
+
+// hotReloadConfig 执行配置热重载
+func (app *Application) hotReloadConfig(newConfig *config.Config) error {
+	log.Println("🔄 开始配置热重载流程...")
+
+	// 1. 取消所有活跃的放贷订单
+	log.Println("📝 取消所有活跃订单...")
+	offers, err := app.bfxClient.GetFundingOffers(app.config.GetFundingSymbol())
+	if err != nil {
+		log.Printf("获取活跃订单失败: %v", err)
+	} else {
+		cancelledCount := 0
+		for _, offer := range offers {
+			if err := app.bfxClient.CancelFundingOffer(offer.ID); err != nil {
+				log.Printf("取消订单失败 (ID: %d): %v", offer.ID, err)
+			} else {
+				cancelledCount++
+			}
+		}
+		log.Printf("✅ 已取消 %d/%d 个订单", cancelledCount, len(offers))
+	}
+
+	// 2. 更新应用程序配置
+	log.Println("🔧 更新应用程序配置...")
+	app.config = newConfig
+
+	// 3. 重新创建 LendingBot 实例（使用新配置）
+	log.Println("🤖 重新初始化放贷机器人...")
+	app.lendingBot = strategy.NewLendingBot(newConfig, app.bfxClient)
+
+	// 4. 更新 CommandHandler 的配置引用
+	app.commandHandler = database.NewCommandHandler(app.dbClient, newConfig, app.lendingBot)
+
+	// 5. 短暂等待，然后开始新的放贷策略
+	log.Println("⏳ 等待2秒后开始新的放贷策略...")
+	time.Sleep(2 * time.Second)
+
+	// 6. 执行新的放贷策略
+	log.Println("🚀 使用新配置执行放贷策略...")
+	if err := app.lendingBot.Execute(); err != nil {
+		return fmt.Errorf("执行新放贷策略失败: %w", err)
+	}
+
+	log.Println("✨ 配置热重载完成，机器人已使用新参数运行")
+	return nil
+}
+
+// TriggerConfigUpdate 触发配置更新（供外部调用）
+func (app *Application) TriggerConfigUpdate(newConfig *config.Config) {
+	select {
+	case app.configUpdateChan <- newConfig:
+		log.Println("配置更新信号已发送")
+	default:
+		log.Println("配置更新通道繁忙，跳过此次更新")
 	}
 }
 
@@ -554,14 +646,6 @@ func (app *Application) updateStatusMetrics(status *database.BotStatus) error {
 		log.Printf("獲取總餘額失敗: %v", err)
 	} else {
 		status.TotalBalance = totalBalance
-	}
-
-	// 獲取活躍訂單
-	orders, err := app.lendingBot.GetClient().GetFundingOffers(app.config.GetFundingSymbol())
-	if err != nil {
-		log.Printf("獲取訂單失敗: %v", err)
-	} else {
-		status.ActiveOrders = len(orders)
 	}
 
 	// 獲取當前利率

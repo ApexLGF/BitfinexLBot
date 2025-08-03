@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
@@ -295,4 +297,68 @@ func (c *Config) GetDatabaseDSN() string {
 		c.Database.Database,
 		c.Database.Charset,
 	)
+}
+
+// WriteConfig 将配置写入YAML文件
+func WriteConfig(config *Config, filePath string) error {
+	// 读取现有的YAML文件以保持注释和格式
+	yamlContent, err := readYAMLWithComments(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read existing config file: %w", err)
+	}
+
+	// 更新YAML内容中的值
+	updatedContent := updateYAMLValues(yamlContent, config)
+
+	// 写入备份文件
+	backupPath := filePath + ".backup"
+	if err := os.WriteFile(backupPath, yamlContent, 0644); err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+
+	// 写入更新后的配置
+	if err := os.WriteFile(filePath, updatedContent, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// readYAMLWithComments 读取YAML文件并保持原有格式
+func readYAMLWithComments(filePath string) ([]byte, error) {
+	return os.ReadFile(filePath)
+}
+
+// updateYAMLValues 更新YAML内容中的配置值，保持原有注释和格式
+func updateYAMLValues(yamlContent []byte, config *Config) []byte {
+	content := string(yamlContent)
+	
+	// 更新各个配置字段，使用正则表达式替换
+	content = updateYAMLField(content, "MINUTES_RUN", fmt.Sprintf("%d", config.MinutesRun))
+	content = updateYAMLField(content, "ORDER_LIMIT", fmt.Sprintf("%d", config.OrderLimit))
+	content = updateYAMLField(content, "MIN_LOAN", fmt.Sprintf("%.0f", config.MinLoan))
+	content = updateYAMLField(content, "MAX_LOAN", fmt.Sprintf("%.0f", config.MaxLoan))
+	content = updateYAMLField(content, "MIN_DAILY_LEND_RATE", fmt.Sprintf("%.6f", config.MinDailyLendRate))
+	content = updateYAMLField(content, "SPREAD_LEND", fmt.Sprintf("%d", config.SpreadLend))
+	content = updateYAMLField(content, "GAP_BOTTOM", fmt.Sprintf("%.0f", config.GapBottom))
+	content = updateYAMLField(content, "GAP_TOP", fmt.Sprintf("%.0f", config.GapTop))
+	content = updateYAMLField(content, "HIGH_HOLD_RATE", fmt.Sprintf("%.3f", config.HighHoldRate))
+	content = updateYAMLField(content, "HIGH_HOLD_AMOUNT", fmt.Sprintf("%.0f", config.HighHoldAmount))
+	content = updateYAMLField(content, "HIGH_HOLD_ORDERS", fmt.Sprintf("%d", config.HighHoldOrders))
+	content = updateYAMLField(content, "ENABLE_SMART_STRATEGY", fmt.Sprintf("%t", config.EnableSmartStrategy))
+	content = updateYAMLField(content, "VOLATILITY_THRESHOLD", fmt.Sprintf("%.6f", config.VolatilityThreshold))
+	content = updateYAMLField(content, "MAX_RATE_MULTIPLIER", fmt.Sprintf("%.1f", config.MaxRateMultiplier))
+	content = updateYAMLField(content, "MIN_RATE_MULTIPLIER", fmt.Sprintf("%.1f", config.MinRateMultiplier))
+	content = updateYAMLField(content, "TEST_MODE", fmt.Sprintf("%t", config.TestMode))
+	
+	return []byte(content)
+}
+
+// updateYAMLField 更新YAML字段值，保持原有格式
+func updateYAMLField(content, fieldName, newValue string) string {
+	// 匹配字段名: 值的模式（忽略注释）
+	re := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*)%s\s*:\s*[^\s#]+(.*)$`, regexp.QuoteMeta(fieldName)))
+	
+	replacement := fmt.Sprintf("${1}%s: %s${2}", fieldName, newValue)
+	return re.ReplaceAllString(content, replacement)
 }

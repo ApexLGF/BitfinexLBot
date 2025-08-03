@@ -2,29 +2,29 @@
 # 请根据实际情况修改相关参数
 
 # 🔑 API 設定
-BITFINEX_API_KEY: "YOUR_BITFINEX_API_KEY"        # 替换为你的Bitfinex API Key
-BITFINEX_SECRET_KEY: "YOUR_BITFINEX_SECRET_KEY"  # 替换为你的Bitfinex Secret Key
+BITFINEX_API_KEY: "827b626c99eee86ee9a3416cfd04daabdf4a4cc38dc"        # 替换为你的Bitfinex API Key
+BITFINEX_SECRET_KEY: "9d0c9800f8f857f5596c47bdbf62f27fc18b519a357"  # 替换为你的Bitfinex Secret Key
 
 # ⚙️ 基本設定
 CURRENCY: "USD"                       # 交易幣種 (USD, BTC, ETH...)
 MINUTES_RUN: 30                       # 主要任務執行間隔 (分鐘)
-ORDER_LIMIT: 10                       # 單次最大下單數量
-MIN_LOAN: 50                          # 最小貸出金額
+ORDER_LIMIT: 20                       # 單次最大下單數量
+MIN_LOAN: 1000                          # 最小貸出金額
 MAX_LOAN: 5000                        # 最大貸出金額
 
 # 📈 利率策略設定
-MIN_DAILY_LEND_RATE: 0.0001          # 最低日利率 (生产环境建议)
+MIN_DAILY_LEND_RATE: 0.028          # 最低日利率 (生产环境建议)
 SPREAD_LEND: 20                       # 資金分散筆數
 GAP_BOTTOM: 10                        # 訂單深度下限
 GAP_TOP: 5000                         # 訂單深度上限
-THIRTY_DAY_LEND_RATE_THRESHOLD: 0.002   # 30天期閾值
-ONE_TWENTY_DAY_LEND_RATE_THRESHOLD: 0.005  # 120天期閾值
-RATE_BONUS: 0.0001                    # 無掛單時利率加成
+THIRTY_DAY_LEND_RATE_THRESHOLD: 0.030   # 30天期閾值
+ONE_TWENTY_DAY_LEND_RATE_THRESHOLD: 0.036  # 120天期閾值
+RATE_BONUS: 0.001                    # 無掛單時利率加成
 
 # 💎 高額持有策略
-HIGH_HOLD_RATE: 0.005                # 高額持有利率 (生产环境建议)
-HIGH_HOLD_AMOUNT: 1000               # 高額持有金額 (0=停用)
-HIGH_HOLD_ORDERS: 1                  # 高額持有訂單數
+HIGH_HOLD_RATE: 0.05                # 高額持有利率 (生产环境建议)
+HIGH_HOLD_AMOUNT: 5000               # 高額持有金額 (0=停用)
+HIGH_HOLD_ORDERS: 2                  # 高額持有訂單數
 
 # K線策略設定
 ENABLE_KLINE_STRATEGY: false         # 啟用K線策略
@@ -35,12 +35,12 @@ KLINE_SPREAD_PERCENT: 5.0            # K線最高點加成百分比：5%
 # 🧠 智能策略設定
 ENABLE_SMART_STRATEGY: true          # 啟用智能策略
 VOLATILITY_THRESHOLD: 0.002          # 市場波動閾值
-MAX_RATE_MULTIPLIER: 2.0             # 最大利率倍數
+MAX_RATE_MULTIPLIER: 1.5             # 最大利率倍數
 MIN_RATE_MULTIPLIER: 0.8             # 最小利率倍數
 RATE_RANGE_INCREASE_PERCENT: 0.04    # 利率範圍增加百分比
 
 # 📱 通知設定
-NOTIFY_RATE_THRESHOLD: 0.05          # 利率通知閾值
+NOTIFY_RATE_THRESHOLD: 0.04          # 利率通知閾值
 LENDING_CHECK_MINUTES: 30            # 借貸檢查間隔 (分鐘)
 
 # 🛡️ 其他設定

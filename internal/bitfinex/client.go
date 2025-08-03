@@ -284,11 +284,7 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 
 // GetFundingCredits 獲取活躍的借貸訂單
 func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
-	// 首先嘗試使用直接API調用獲取更多記錄
-	allCredits, err := c.getFundingCreditsWithLimit(symbol, 100) // 嘗試獲取100條記錄
-	if err == nil && len(allCredits) > 0 {
-		return allCredits, nil
-	}
+	// 注意：由于API限制，暂时使用SDK方法，但已修复activeCounts统计问题
 
 	// 如果直接API調用失敗，回退到使用Go庫的方法
 	credits, err := c.restClient.Funding.Credits(symbol)
@@ -328,8 +324,10 @@ func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 
 // getFundingCreditsWithLimit 使用直接HTTP請求獲取funding credits，支持limit參數
 func (c *Client) getFundingCreditsWithLimit(symbol string, limit int) ([]*FundingCredit, error) {
-	// 構建API URL - 使用Bitfinex API v2直接端點
-	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/funding/credits/%s?limit=%d", symbol, limit)
+	// 构建API URL - 添加start参数获取更多历史记录
+	// start设置为30天前的时间戳（毫秒），确保包含所有活跃的lending credits
+	startTime := time.Now().AddDate(0, 0, -30).UnixNano() / 1000000 // 30天前的毫秒时间戳
+	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/funding/credits/%s?limit=%d&start=%d", symbol, limit, startTime)
 
 	// 創建HTTP請求
 	req, err := http.NewRequest("POST", url, nil)
@@ -340,7 +338,8 @@ func (c *Client) getFundingCreditsWithLimit(symbol string, limit int) ([]*Fundin
 	// 添加認證頭 - 使用客户端的nonce生成器（与SDK统一）
 	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
 	body := ""
-	payload := fmt.Sprintf("/api/v2/auth/r/funding/credits/%s%d%s", symbol, timestamp, body)
+	// 修正payload以包含查询参数
+	payload := fmt.Sprintf("/api/v2/auth/r/funding/credits/%s?limit=%d&start=%d%d%s", symbol, limit, startTime, timestamp, body)
 	
 	// 計算簽名
 	h := hmac.New(sha512.New384, []byte(c.secret))

@@ -10,11 +10,17 @@ import (
 	"github.com/ApexLGF/BitfinexLBot/internal/strategy"
 )
 
+// ConfigUpdater 配置更新接口
+type ConfigUpdater interface {
+	TriggerConfigUpdate(newConfig *config.Config)
+}
+
 // CommandHandler 命令处理器
 type CommandHandler struct {
-	dbClient   *Client
-	config     *config.Config
-	lendingBot *strategy.LendingBot
+	dbClient      *Client
+	config        *config.Config
+	lendingBot    *strategy.LendingBot
+	configUpdater ConfigUpdater
 }
 
 // NewCommandHandler 创建新的命令处理器
@@ -24,6 +30,11 @@ func NewCommandHandler(dbClient *Client, config *config.Config, lendingBot *stra
 		config:     config,
 		lendingBot: lendingBot,
 	}
+}
+
+// SetConfigUpdater 设置配置更新器
+func (h *CommandHandler) SetConfigUpdater(updater ConfigUpdater) {
+	h.configUpdater = updater
 }
 
 // ProcessCommand 处理单个命令
@@ -72,6 +83,8 @@ func (h *CommandHandler) ProcessCommand(cmd *Command) error {
 		result, err = h.handleWallets(cmd)
 	case "daily_earnings":
 		result, err = h.handleDailyEarnings(cmd)
+	case "update_all_config":
+		result, err = h.handleUpdateAllConfig(cmd)
 	default:
 		err = fmt.Errorf("unknown command type: %s", cmd.CommandType)
 	}
@@ -245,9 +258,9 @@ func (h *CommandHandler) handleCredits(cmd *Command) (string, error) {
 		totalAmount += credit.Amount
 		// 计算已赚取的利息（基于借贷期间）
 		totalEarning += credit.Amount * credit.Rate * float64(credit.Period)
-		if credit.Status == "ACTIVE" {
-			activeCounts++
-		}
+		// 从Bitfinex API返回的funding credits都是活跃状态
+		// Status字段可能为空字符串，所以直接计算所有记录为活跃
+		activeCounts++
 	}
 
 	avgRate := 0.0
@@ -448,4 +461,189 @@ func (h *CommandHandler) handleDailyEarnings(cmd *Command) (string, error) {
 	}
 
 	return string(earningsJSON), nil
+}
+
+// handleUpdateAllConfig 处理批量配置更新命令
+func (h *CommandHandler) handleUpdateAllConfig(cmd *Command) (string, error) {
+	// 解析命令数据中的配置参数
+	var configData map[string]interface{}
+	if err := json.Unmarshal(cmd.CommandData, &configData); err != nil {
+		return "", fmt.Errorf("invalid config data format: %w", err)
+	}
+
+	// 创建新配置对象（基于当前配置）
+	newConfig := *h.config // 复制当前配置
+	
+	// 更新配置字段（排除API密钥相关字段）
+	if val, exists := configData["MINUTES_RUN"]; exists {
+		if minutesRun, ok := val.(float64); ok {
+			newConfig.MinutesRun = int(minutesRun)
+		}
+	}
+	
+	if val, exists := configData["ORDER_LIMIT"]; exists {
+		if orderLimit, ok := val.(float64); ok {
+			newConfig.OrderLimit = int(orderLimit)
+		}
+	}
+	
+	if val, exists := configData["MIN_LOAN"]; exists {
+		if minLoan, ok := val.(float64); ok {
+			newConfig.MinLoan = minLoan
+		}
+	}
+	
+	if val, exists := configData["MAX_LOAN"]; exists {
+		if maxLoan, ok := val.(float64); ok {
+			newConfig.MaxLoan = maxLoan
+		}
+	}
+	
+	if val, exists := configData["MIN_DAILY_LEND_RATE"]; exists {
+		if minRate, ok := val.(float64); ok {
+			newConfig.MinDailyLendRate = minRate
+		}
+	}
+	
+	if val, exists := configData["SPREAD_LEND"]; exists {
+		if spreadLend, ok := val.(float64); ok {
+			newConfig.SpreadLend = int(spreadLend)
+		}
+	}
+	
+	if val, exists := configData["GAP_BOTTOM"]; exists {
+		if gapBottom, ok := val.(float64); ok {
+			newConfig.GapBottom = gapBottom
+		}
+	}
+	
+	if val, exists := configData["GAP_TOP"]; exists {
+		if gapTop, ok := val.(float64); ok {
+			newConfig.GapTop = gapTop
+		}
+	}
+	
+	if val, exists := configData["HIGH_HOLD_RATE"]; exists {
+		if highRate, ok := val.(float64); ok {
+			newConfig.HighHoldRate = highRate
+		}
+	}
+	
+	if val, exists := configData["HIGH_HOLD_AMOUNT"]; exists {
+		if highAmount, ok := val.(float64); ok {
+			newConfig.HighHoldAmount = highAmount
+		}
+	}
+	
+	if val, exists := configData["HIGH_HOLD_ORDERS"]; exists {
+		if highOrders, ok := val.(float64); ok {
+			newConfig.HighHoldOrders = int(highOrders)
+		}
+	}
+	
+	if val, exists := configData["ENABLE_SMART_STRATEGY"]; exists {
+		if smartStrategy, ok := val.(bool); ok {
+			newConfig.EnableSmartStrategy = smartStrategy
+		}
+	}
+	
+	if val, exists := configData["VOLATILITY_THRESHOLD"]; exists {
+		if threshold, ok := val.(float64); ok {
+			newConfig.VolatilityThreshold = threshold
+		}
+	}
+	
+	if val, exists := configData["MAX_RATE_MULTIPLIER"]; exists {
+		if maxMultiplier, ok := val.(float64); ok {
+			newConfig.MaxRateMultiplier = maxMultiplier
+		}
+	}
+	
+	if val, exists := configData["MIN_RATE_MULTIPLIER"]; exists {
+		if minMultiplier, ok := val.(float64); ok {
+			newConfig.MinRateMultiplier = minMultiplier
+		}
+	}
+	
+	if val, exists := configData["TEST_MODE"]; exists {
+		if testMode, ok := val.(bool); ok {
+			newConfig.TestMode = testMode
+		}
+	}
+
+	// 验证新配置的有效性
+	if err := h.validateConfig(&newConfig); err != nil {
+		return "", fmt.Errorf("config validation failed: %w", err)
+	}
+
+	// 写入配置文件
+	if err := h.writeConfigToFile(&newConfig); err != nil {
+		return "", fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// 触发应用程序配置热重载
+	if h.configUpdater != nil {
+		h.configUpdater.TriggerConfigUpdate(&newConfig)
+	}
+
+	result := map[string]interface{}{
+		"message": "配置更新成功，机器人正在使用新参数重新运行",
+		"updated_params": configData,
+		"timestamp": time.Now().Unix(),
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	return string(resultJSON), nil
+}
+
+// validateConfig 验证配置参数的有效性
+func (h *CommandHandler) validateConfig(cfg *config.Config) error {
+	// 验证利率范围
+	if cfg.MinDailyLendRate < 0.0001 || cfg.MinDailyLendRate > 0.1 {
+		return fmt.Errorf("最低日利率必须在 0.0001 到 0.1 之间")
+	}
+	
+	// 验证贷出金额范围
+	if cfg.MinLoan < 50 || cfg.MinLoan > cfg.MaxLoan {
+		return fmt.Errorf("最小贷出金额必须大于50且小于最大贷出金额")
+	}
+	
+	if cfg.MaxLoan > 50000 {
+		return fmt.Errorf("最大贷出金额不能超过50000")
+	}
+	
+	// 验证订单限制
+	if cfg.OrderLimit < 1 || cfg.OrderLimit > 100 {
+		return fmt.Errorf("订单限制必须在 1 到 100 之间")
+	}
+	
+	// 验证时间间隔
+	if cfg.MinutesRun < 5 || cfg.MinutesRun > 240 {
+		return fmt.Errorf("执行间隔必须在 5 到 240 分钟之间")
+	}
+	
+	// 验证分散笔数
+	if cfg.SpreadLend < 1 || cfg.SpreadLend > 50 {
+		return fmt.Errorf("分散笔数必须在 1 到 50 之间")
+	}
+	
+	return nil
+}
+
+// writeConfigToFile 将配置写入文件
+func (h *CommandHandler) writeConfigToFile(cfg *config.Config) error {
+	// 配置文件路径（假设在容器中的路径）
+	configPath := "/app/config.yaml"
+	
+	// 写入配置文件
+	if err := config.WriteConfig(cfg, configPath); err != nil {
+		return fmt.Errorf("failed to write config to file: %w", err)
+	}
+	
+	log.Printf("配置已成功写入到文件: %s", configPath)
+	return nil
 }

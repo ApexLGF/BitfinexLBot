@@ -350,3 +350,69 @@ K线策略：
 - calculateKlineOffers 是一个简洁的技术分析策略，适合基于历史趋势进行决策的场景
 
 两种策略可以根据不同的市场环境和用户偏好进行选择，智能策略更适合复杂多变的市场，K线策略更适合趋势明确的市场环境。
+
+## 生产环境部署
+
+**Docker Hub 镜像**: `apexlgf/bitfenix-bot:latest` - 官方构建的生产就绪镜像
+
+**生产环境集成**:
+- 支持与现有 nginx/php/mysql 环境无缝集成
+- 提供完整的生产环境 Docker Compose 配置
+- 包含数据库权限修复和初始化工具
+- Web 管理界面可集成到现有 Nginx 配置中
+
+**生产环境文件**:
+- `production-docker-compose.yml` - 适配现有环境的 Docker Compose 配置
+- `production-config.yaml` - 生产环境优化的配置模板
+- `fix-production-database.sh` - 数据库权限修复工具
+- `PRODUCTION_DEPLOYMENT_GUIDE.md` - 完整的生产环境部署指南
+
+**生产环境部署命令**:
+```bash
+# 拉取生产镜像
+docker pull apexlgf/bitfenix-bot:latest
+
+# 修复数据库权限（如果需要）
+./fix-production-database.sh
+
+# 部署到生产环境
+docker compose -f production-docker-compose.yml up -d
+
+# 查看生产环境日志
+docker compose logs -f bitfinex-bot
+```
+
+**生产环境访问地址**:
+- BitfinexBot Web 管理界面: `http://your-server/bitfinex/`
+- 数据库管理: `http://your-server:8081` (phpMyAdmin)
+- 原有应用保持: `http://your-server/`
+
+**生产环境关键配置**:
+- 必须设置 `TEST_MODE: false` 启用真实交易
+- 配置真实的 Bitfinex API 密钥
+- 调整利率策略参数适应生产环境
+- 启用数据库持久化和备份
+
+**生产环境故障排除**:
+- 数据库连接问题: 运行 `fix-production-database.sh`
+- 权限问题: 检查 Docker 容器网络配置
+- API 连接失败: 验证 API 密钥和网络连接
+- Web 界面无法访问: 检查 Nginx 配置和文件权限
+
+## Docker 镜像构建和发布
+
+**本地构建镜像**:
+```bash
+# 构建本地镜像
+docker build -t apexlgf/bitfenix-bot:latest .
+
+# 推送到 Docker Hub (需要登录)
+docker push apexlgf/bitfenix-bot:latest
+```
+
+**镜像特性**:
+- 基于 Alpine Linux 的多阶段构建
+- 优化的镜像大小 (~83MB)
+- 包含时区设置 (Asia/Shanghai)
+- 非 root 用户运行增强安全性
+- 内置健康检查和信号处理

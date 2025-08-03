@@ -336,7 +336,6 @@ func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.Fundin
 		}
 	}
 
-	// 找出利率範圍
 	minRate := rates[0]
 	maxRate := rates[0]
 	for _, rate := range rates {

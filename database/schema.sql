@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS web_commands (
         'start', 'stop', 'restart', 'status', 
         'balance', 'rates', 'orders', 'config',
         'cancel_all', 'lending_check', 'rate_check',
-        'set_config', 'get_config'
+        'set_config', 'get_config', 'update_all_config',
+        'credits', 'wallets', 'daily_earnings'
     ) NOT NULL,
     command_data JSON,                    -- 命令参数 (JSON格式)
     status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',

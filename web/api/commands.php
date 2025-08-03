@@ -90,7 +90,7 @@ class CommandAPI {
         $validCommands = [
             'start', 'stop', 'restart', 'status', 'balance', 'rates', 
             'orders', 'credits', 'config', 'cancel_all', 'lending_check', 'rate_check',
-            'set_config', 'get_config', 'wallets', 'daily_earnings'
+            'set_config', 'get_config', 'update_all_config', 'wallets', 'daily_earnings'
         ];
         
         if (!in_array($commandType, $validCommands)) {

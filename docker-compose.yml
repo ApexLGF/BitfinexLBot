@@ -2,7 +2,7 @@ services:
   # MySQL 数据库服务
   mysql:
     image: mysql:8.0
-    container_name: bitfinex_mysql
+    container_name: bitfinexbot_mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root123
@@ -27,7 +27,7 @@ services:
   # PHP-FPM + Nginx Web 服务
   web:
     image: nginx:alpine
-    container_name: bitfinex_web
+    container_name: bitfinexbot_web
     restart: unless-stopped
     ports:
       - "8080:80"
@@ -43,8 +43,10 @@ services:
 
   # PHP-FPM 服务
   php:
-    image: php:8.1-fpm-alpine
-    container_name: bitfinex_php
+    build:
+      context: .
+      dockerfile: Dockerfile.php
+    container_name: bitfinexbot_php
     restart: unless-stopped
     volumes:
       - ./web:/var/www/html
@@ -53,19 +55,13 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    command: >
-      sh -c "
-        apk add --no-cache mysql-client &&
-        docker-php-ext-install pdo pdo_mysql mysqli &&
-        php-fpm
-      "
 
   # BitfinexBot Go 应用
   bitfinex-bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bitfinex_bot
+    container_name: bitfinexbot_app
     restart: unless-stopped
     volumes:
       - ./config.yaml:/app/config.yaml
