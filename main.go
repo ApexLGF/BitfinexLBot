@@ -456,19 +456,19 @@ func main() {
 
 // scheduleCommandCheck 調度命令檢查（替代 Telegram Bot）
 func (app *Application) scheduleCommandCheck() {
-	// 智能轮询：初始间隔为1秒，根据命令负载动态调整
-	currentInterval := 1 * time.Second
-	minInterval := 1 * time.Second
-	maxInterval := 10 * time.Second
-
-	// 最近命令统计
-	recentCommandCount := 0
-	lastCheckTime := time.Now()
+	// 优化的轮询策略：有待处理命令时保持高频，无命令时降低频率
+	fastInterval := 500 * time.Millisecond  // 有待处理命令时的快速间隔
+	normalInterval := 2 * time.Second       // 正常间隔
+	slowInterval := 5 * time.Second         // 无命令时的慢间隔
+	
+	currentInterval := fastInterval
+	consecutiveEmptyChecks := 0
+	maxEmptyChecks := 10 // 连续10次无命令后降低频率
 
 	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
 
-	log.Printf("启动智能命令检查调度器，初始间隔: %v", currentInterval)
+	log.Printf("启动优化命令检查调度器，初始间隔: %v", currentInterval)
 
 	for {
 		select {
@@ -478,47 +478,38 @@ func (app *Application) scheduleCommandCheck() {
 		case <-ticker.C:
 			// 检查待处理命令
 			commandCount := app.checkPendingCommandsWithCount()
-
-			// 更新统计
-			recentCommandCount += commandCount
-
-			// 每分钟调整一次轮询间隔
-			if time.Since(lastCheckTime) >= time.Minute {
-				newInterval := app.calculateOptimalInterval(recentCommandCount, minInterval, maxInterval)
-
-				if newInterval != currentInterval {
-					log.Printf("调整命令检查间隔: %v -> %v (基于最近%d个命令)",
-						currentInterval, newInterval, recentCommandCount)
-
-					ticker.Stop()
-					ticker = time.NewTicker(newInterval)
-					currentInterval = newInterval
+			
+			var newInterval time.Duration
+			
+			if commandCount > 0 {
+				// 有命令处理时，使用快速间隔
+				newInterval = fastInterval
+				consecutiveEmptyChecks = 0
+			} else {
+				// 无命令时，逐步降低频率
+				consecutiveEmptyChecks++
+				if consecutiveEmptyChecks <= 5 {
+					newInterval = fastInterval  // 前5次仍保持快速检查
+				} else if consecutiveEmptyChecks <= maxEmptyChecks {
+					newInterval = normalInterval // 接下来5次使用正常间隔
+				} else {
+					newInterval = slowInterval  // 超过10次后使用慢间隔
 				}
-
-				// 重置统计
-				recentCommandCount = 0
-				lastCheckTime = time.Now()
+			}
+			
+			// 动态调整轮询间隔
+			if newInterval != currentInterval {
+				log.Printf("调整命令检查间隔: %v -> %v (命令数: %d, 空检查次数: %d)",
+					currentInterval, newInterval, commandCount, consecutiveEmptyChecks)
+				
+				ticker.Stop()
+				ticker = time.NewTicker(newInterval)
+				currentInterval = newInterval
 			}
 		}
 	}
 }
 
-// calculateOptimalInterval 计算最优轮询间隔
-func (app *Application) calculateOptimalInterval(commandCount int, minInterval, maxInterval time.Duration) time.Duration {
-	if commandCount == 0 {
-		// 无命令时，使用较长间隔
-		return maxInterval
-	} else if commandCount > 10 {
-		// 高负载时，使用最短间隔
-		return minInterval
-	} else if commandCount > 5 {
-		// 中等负载时，使用中等间隔
-		return 3 * time.Second
-	} else {
-		// 低负载时，使用较短间隔
-		return 5 * time.Second
-	}
-}
 
 // scheduleStatusUpdate 調度狀態更新
 func (app *Application) scheduleStatusUpdate() {
