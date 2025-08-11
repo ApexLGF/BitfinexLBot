@@ -53,8 +53,9 @@ func NewCustomNonceGeneratorWithStep(step uint64) *CustomNonceGenerator {
 var globalNonce *CustomNonceGenerator
 
 func init() {
-	// 使用较大的步长（50）来避免高频API调用时的冲突
-	globalNonce = NewCustomNonceGeneratorWithStep(50)
+	// 使用更大的步长（500）来避免高频API调用时的nonce冲突
+	// 更大的步长可以确保即使在并发场景下也能避免nonce冲突
+	globalNonce = NewCustomNonceGeneratorWithStep(500)
 }
 
 // GetGlobalNonce 获取全局nonce（字符串格式）
@@ -65,4 +66,9 @@ func GetGlobalNonce() string {
 // GetGlobalNonceUint64 获取全局nonce（uint64格式）
 func GetGlobalNonceUint64() uint64 {
 	return globalNonce.GetNonceUint64()
+}
+
+// GetGlobalNonceGenerator 获取全局nonce生成器实例
+func GetGlobalNonceGenerator() *CustomNonceGenerator {
+	return globalNonce
 }

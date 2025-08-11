@@ -20,6 +20,25 @@ import (
 	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 )
 
+// retryOnNonceError 通用的nonce错误重试助手函数
+func (c *Client) retryOnNonceError(operation func() error, operationName string) error {
+	maxRetries := 3
+	for retry := 0; retry <= maxRetries; retry++ {
+		err := operation()
+		if err != nil {
+			// 检查是否是nonce相关错误
+			if strings.Contains(err.Error(), "nonce") && retry < maxRetries {
+				log.Printf("%s Nonce错误，第%d次重试: %v", operationName, retry+1, err)
+				time.Sleep(time.Duration(retry+1) * 200 * time.Millisecond) // 递增延迟
+				continue
+			}
+			return err
+		}
+		return nil // 成功
+	}
+	return fmt.Errorf("%s 重试失败", operationName)
+}
+
 // Client Bitfinex API 客戶端封裝
 type Client struct {
 	restClient *rest.Client
@@ -28,22 +47,22 @@ type Client struct {
 	nonceGen   *CustomNonceGenerator // 保存nonce生成器用于直接HTTP调用
 }
 
-// NewClient 創建新的 Bitfinex 客戶端，使用自定义的线程安全nonce生成器
+// NewClient 創建新的 Bitfinex 客戶端，使用全局统一的线程安全nonce生成器
 func NewClient(apiKey, secretKey string) *Client {
-	// 创建自定义nonce生成器，使用较大的步长以避免高频API调用时的nonce冲突
-	// 步长100适合高频交易场景，进一步减少nonce冲突
-	nonceGen := NewCustomNonceGeneratorWithStep(100)
+	// 使用全局统一的nonce生成器，确保所有API调用使用相同的nonce序列
+	// 这样可以避免SDK调用和直接HTTP调用之间的nonce冲突
+	globalNonceGen := GetGlobalNonceGenerator()
 	
-	// 使用自定义nonce生成器创建客户端  
+	// 使用全局nonce生成器创建客户端  
 	// 使用认证端点URL: https://api.bitfinex.com/v2/ (用于认证API调用)
-	client := rest.NewClientWithURLNonce("https://api.bitfinex.com/v2/", nonceGen)
+	client := rest.NewClientWithURLNonce("https://api.bitfinex.com/v2/", globalNonceGen)
 	client = client.Credentials(apiKey, secretKey)
 	
 	return &Client{
 		restClient: client,
 		key:        apiKey,
 		secret:     secretKey,
-		nonceGen:   nonceGen, // 保存nonce生成器用于直接HTTP调用
+		nonceGen:   globalNonceGen, // 保存全局nonce生成器用于直接HTTP调用
 	}
 }
 
@@ -129,21 +148,23 @@ func (c *Client) GetFundingOffers(symbol string) ([]*FundingOffer, error) {
 	return result, nil
 }
 
-// CancelFundingOffer 取消資金貸出訂單
+// CancelFundingOffer 取消資金貸出訂單，支持nonce冲突自动重试
 func (c *Client) CancelFundingOffer(offerID int64) error {
 	cancelReq := &fundingoffer.CancelRequest{
 		ID: offerID,
 	}
 
-	_, err := c.restClient.Funding.CancelOffer(cancelReq)
-	if err != nil {
-		return errors.NewOrderError("failed to cancel funding offer", err)
-	}
-
-	return nil
+	// 使用重试机制取消订单
+	return c.retryOnNonceError(func() error {
+		_, err := c.restClient.Funding.CancelOffer(cancelReq)
+		if err != nil {
+			return errors.NewOrderError("failed to cancel funding offer", err)
+		}
+		return nil
+	}, "CancelFundingOffer")
 }
 
-// SubmitFundingOffer 提交新的資金貸出訂單
+// SubmitFundingOffer 提交新的資金貸出訂單，支持nonce冲突自动重试
 func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate float64, period int, hidden bool) error {
 	offerReq := &fundingoffer.SubmitRequest{
 		Type:   constants.OfferTypeLIMIT,
@@ -154,12 +175,14 @@ func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate flo
 		Hidden: hidden,
 	}
 
-	_, err := c.restClient.Funding.SubmitOffer(offerReq)
-	if err != nil {
-		return errors.NewOrderError("failed to submit funding offer", err)
-	}
-
-	return nil
+	// 使用重试机制提交订单
+	return c.retryOnNonceError(func() error {
+		_, err := c.restClient.Funding.SubmitOffer(offerReq)
+		if err != nil {
+			return errors.NewOrderError("failed to submit funding offer", err)
+		}
+		return nil
+	}, "SubmitFundingOffer")
 }
 
 // GetWallets 獲取錢包信息
@@ -282,139 +305,51 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 	return frr, nil
 }
 
-// GetFundingCredits 獲取活躍的借貸訂單
+// GetFundingCredits 獲取活躍的借貸訂單，支持nonce冲突自动重试
 func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 	// 注意：由于API限制，暂时使用SDK方法，但已修复activeCounts统计问题
-
-	// 如果直接API調用失敗，回退到使用Go庫的方法
-	credits, err := c.restClient.Funding.Credits(symbol)
-	if err != nil {
-		// 處理特殊的空響應錯誤
-		if strings.Contains(err.Error(), "data slice too short") {
-			return []*FundingCredit{}, nil
-		}
-		return nil, errors.NewAPIError("failed to get funding credits", err)
-	}
-
-	// 處理空響應或無數據的情況
-	if credits == nil || credits.Snapshot == nil || len(credits.Snapshot) == 0 {
-		return []*FundingCredit{}, nil
-	}
-
-	result := make([]*FundingCredit, 0, len(credits.Snapshot))
-	for _, credit := range credits.Snapshot {
-		// 添加安全檢查，防止空數據導致panic
-		if credit == nil {
-			continue
-		}
-		result = append(result, &FundingCredit{
-			ID:         credit.ID,
-			Symbol:     credit.Symbol,
-			Amount:     credit.Amount,
-			Rate:       credit.Rate, // API 已返回日利率
-			Period:     credit.Period,
-			MTSCreated: credit.MTSCreated,
-			MTSOpened:  credit.MTSOpened,
-			Status:     credit.Status,
-		})
-	}
-
-	return result, nil
-}
-
-// getFundingCreditsWithLimit 使用直接HTTP請求獲取funding credits，支持limit參數
-func (c *Client) getFundingCreditsWithLimit(symbol string, limit int) ([]*FundingCredit, error) {
-	// 构建API URL - 添加start参数获取更多历史记录
-	// start设置为30天前的时间戳（毫秒），确保包含所有活跃的lending credits
-	startTime := time.Now().AddDate(0, 0, -30).UnixNano() / 1000000 // 30天前的毫秒时间戳
-	url := fmt.Sprintf("https://api.bitfinex.com/v2/auth/r/funding/credits/%s?limit=%d&start=%d", symbol, limit, startTime)
-
-	// 創建HTTP請求
-	req, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 添加認證頭 - 使用客户端的nonce生成器（与SDK统一）
-	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
-	body := ""
-	// 修正payload以包含查询参数
-	payload := fmt.Sprintf("/api/v2/auth/r/funding/credits/%s?limit=%d&start=%d%d%s", symbol, limit, startTime, timestamp, body)
 	
-	// 計算簽名
-	h := hmac.New(sha512.New384, []byte(c.secret))
-	h.Write([]byte(payload))
-	signature := hex.EncodeToString(h.Sum(nil))
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("bfx-nonce", fmt.Sprintf("%d", timestamp))
-	req.Header.Set("bfx-apikey", c.key)
-	req.Header.Set("bfx-signature", signature)
-
-	// 發送請求
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 讀取響應
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// 解析JSON響應
-	var rawCredits [][]interface{}
-	if err := json.Unmarshal(bodyBytes, &rawCredits); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// 轉換為FundingCredit結構
-	result := make([]*FundingCredit, 0, len(rawCredits))
-	for _, raw := range rawCredits {
-		if len(raw) < 15 { // Bitfinex funding credit響應至少需要15個字段
-			continue
+	var result []*FundingCredit
+	err := c.retryOnNonceError(func() error {
+		credits, err := c.restClient.Funding.Credits(symbol)
+		if err != nil {
+			// 處理特殊的空響應錯誤
+			if strings.Contains(err.Error(), "data slice too short") {
+				result = []*FundingCredit{}
+				return nil
+			}
+			return errors.NewAPIError("failed to get funding credits", err)
 		}
 
-		// 安全地轉換每個字段
-		credit := &FundingCredit{}
-		
-		if id, ok := raw[0].(float64); ok {
-			credit.ID = int64(id)
-		}
-		if symbol, ok := raw[1].(string); ok {
-			credit.Symbol = symbol
-		}
-		if amount, ok := raw[5].(float64); ok {
-			credit.Amount = amount
-		}
-		if rate, ok := raw[11].(float64); ok {
-			credit.Rate = rate
-		}
-		if period, ok := raw[12].(float64); ok {
-			credit.Period = int64(period)
-		}
-		if mtsCreated, ok := raw[3].(float64); ok {
-			credit.MTSCreated = int64(mtsCreated)
-		}
-		if mtsOpened, ok := raw[4].(float64); ok {
-			credit.MTSOpened = int64(mtsOpened)
-		}
-		if status, ok := raw[10].(string); ok {
-			credit.Status = status
+		// 處理空響應或無數據的情況
+		if credits == nil || credits.Snapshot == nil || len(credits.Snapshot) == 0 {
+			result = []*FundingCredit{}
+			return nil
 		}
 
-		result = append(result, credit)
-	}
+		result = make([]*FundingCredit, 0, len(credits.Snapshot))
+		for _, credit := range credits.Snapshot {
+			// 添加安全檢查，防止空數據導致panic
+			if credit == nil {
+				continue
+			}
+			result = append(result, &FundingCredit{
+				ID:         credit.ID,
+				Symbol:     credit.Symbol,
+				Amount:     credit.Amount,
+				Rate:       credit.Rate, // API 已返回日利率
+				Period:     credit.Period,
+				MTSCreated: credit.MTSCreated,
+				MTSOpened:  credit.MTSOpened,
+				Status:     credit.Status,
+			})
+		}
+		return nil
+	}, "GetFundingCredits")
 
-	return result, nil
+	return result, err
 }
+
 
 // GetFundingCandles 獲取資金 K 線數據
 func (c *Client) GetFundingCandles(symbol string, timeFrame string, limit int) ([]*Candle, error) {
@@ -580,8 +515,53 @@ func (c *Client) GetDailyFundingEarnings(currency string, date time.Time) (float
 	return totalEarnings, nil
 }
 
-// GetWeeklyFundingEarnings 获取过去7天的资金借贷收益
+// DailyEarning 表示单日收益数据
+type DailyEarning struct {
+	Date     string  `json:"date"`
+	Earnings float64 `json:"earnings"`
+}
+
+// GetWeeklyFundingEarnings 获取过去7天的资金借贷收益（仅返回总和）
 func (c *Client) GetWeeklyFundingEarnings(currency string) (float64, error) {
+	// 使用详细函数获取数据，但只返回总收益
+	_, totalEarnings, err := c.GetWeeklyFundingEarningsDetail(currency)
+	return totalEarnings, err
+}
+
+// GetWeeklyFundingEarningsWithDB 获取过去7天的资金借贷收益并保存到数据库
+func (c *Client) GetWeeklyFundingEarningsWithDB(currency string, dbSaver DatabaseSaver) (float64, error) {
+	// 获取每日收益详情
+	dailyEarnings, totalEarnings, err := c.GetWeeklyFundingEarningsDetail(currency)
+	if err != nil {
+		return 0, err
+	}
+	
+	// 保存每日收益数据到数据库
+	for _, daily := range dailyEarnings {
+		// 使用通用接口保存数据（忽略错误以免影响主功能）
+		_ = dbSaver.SaveDailyEarningSummaryParams(
+			currency,
+			daily.Date,
+			1, // 至少有1笔收益记录
+			daily.Earnings, // totalAmount
+			daily.Earnings, // totalEarnings
+			0, // avgRate - 无法从ledger获取利率信息
+			0, // minRate
+			0, // maxRate
+			0, // avgPeriod - 无法从ledger获取期间信息
+		)
+	}
+	
+	return totalEarnings, nil
+}
+
+// DatabaseSaver 数据库保存接口，使用通用的接口避免循环导入
+type DatabaseSaver interface {
+	SaveDailyEarningSummaryParams(currency, summaryDate string, totalTrades int, totalAmount, totalEarnings, avgRate, minRate, maxRate, avgPeriod float64) error
+}
+
+// GetWeeklyFundingEarningsDetail 获取过去7天的每日资金借贷收益详情
+func (c *Client) GetWeeklyFundingEarningsDetail(currency string) ([]DailyEarning, float64, error) {
 	// 计算时间范围：过去7天
 	endTime := time.Now().UTC()
 	startTime := endTime.AddDate(0, 0, -7)
@@ -599,11 +579,11 @@ func (c *Client) GetWeeklyFundingEarnings(currency string) (float64, error) {
 	// 创建HTTP请求
 	req, err := http.NewRequest("POST", url, strings.NewReader(requestBody))
 	if err != nil {
-		return 0, errors.NewAPIError("failed to create request", err)
+		return nil, 0, errors.NewAPIError("failed to create request", err)
 	}
 	
 	// 设置认证头 - 使用客户端的nonce生成器（与SDK统一）
-	timestamp := c.nonceGen.GetNonceUint64() // 使用与SDK相同的nonce生成器
+	timestamp := c.nonceGen.GetNonceUint64()
 	apiPath := fmt.Sprintf("/api/v2/auth/r/ledgers/%s/hist", currency)
 	payload := fmt.Sprintf("%s%d%s", apiPath, timestamp, requestBody)
 	
@@ -620,24 +600,27 @@ func (c *Client) GetWeeklyFundingEarnings(currency string) (float64, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, errors.NewAPIError("failed to get ledger entries", err)
+		return nil, 0, errors.NewAPIError("failed to get ledger entries", err)
 	}
 	defer resp.Body.Close()
 	
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d: %s", resp.StatusCode, string(body)), nil)
+		return nil, 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d: %s", resp.StatusCode, string(body)), nil)
 	}
 	
 	// 解析响应
 	var rawData [][]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
-		return 0, errors.NewAPIError("failed to decode ledger response", err)
+		return nil, 0, errors.NewAPIError("failed to decode ledger response", err)
 	}
 	
-	// 计算资金借贷收益总和
-	// Bitfinex API v2 响应格式: [ID, CURRENCY, WALLET, MTS, null, AMOUNT, BALANCE, null, DESCRIPTION]
+	// 按日期分组计算收益
+	dailyMap := make(map[string]float64)
 	totalEarnings := 0.0
+	
+	// 处理ledger记录
+	// Bitfinex API v2 响应格式: [ID, CURRENCY, WALLET, MTS, null, AMOUNT, BALANCE, null, DESCRIPTION]
 	for _, raw := range rawData {
 		if len(raw) < 9 {
 			continue
@@ -645,14 +628,40 @@ func (c *Client) GetWeeklyFundingEarnings(currency string) (float64, error) {
 		
 		// 检查描述字段是否包含资金收益相关信息 (索引8是DESCRIPTION)
 		if description, ok := raw[8].(string); ok {
+			// 只计算真正的放贷收益，过滤掉转账记录
 			if strings.Contains(description, "Margin Funding Payment") || strings.Contains(description, "Funding Payment") {
-				// 索引5是AMOUNT
+				// 索引5是AMOUNT，索引3是MTS(时间戳)
 				if amount, ok := raw[5].(float64); ok && amount > 0 {
-					totalEarnings += amount
+					if mts, ok := raw[3].(float64); ok {
+						// 转换时间戳为日期字符串 (YYYY-MM-DD格式)
+						date := time.Unix(int64(mts)/1000, 0).UTC().Format("2006-01-02")
+						dailyMap[date] += amount
+						totalEarnings += amount
+					}
 				}
 			}
 		}
 	}
 	
-	return totalEarnings, nil
+	// 转换为切片并排序
+	var dailyEarnings []DailyEarning
+	for date, earnings := range dailyMap {
+		if earnings > 0 { // 只包含有收益的日期
+			dailyEarnings = append(dailyEarnings, DailyEarning{
+				Date:     date,
+				Earnings: earnings,
+			})
+		}
+	}
+	
+	// 按日期排序
+	for i := 0; i < len(dailyEarnings)-1; i++ {
+		for j := i + 1; j < len(dailyEarnings); j++ {
+			if dailyEarnings[i].Date > dailyEarnings[j].Date {
+				dailyEarnings[i], dailyEarnings[j] = dailyEarnings[j], dailyEarnings[i]
+			}
+		}
+	}
+	
+	return dailyEarnings, totalEarnings, nil
 }

@@ -329,3 +329,121 @@ func (c *Client) LogOperation(userID int, operationType, operationDesc, ipAddres
 
 	return nil
 }
+
+// DailyEarningSummary 每日收益汇总数据结构
+type DailyEarningSummary struct {
+	ID            int     `json:"id"`
+	Currency      string  `json:"currency"`
+	SummaryDate   string  `json:"summary_date"` // YYYY-MM-DD格式
+	TotalTrades   int     `json:"total_trades"`
+	TotalAmount   float64 `json:"total_amount"`
+	TotalEarnings float64 `json:"total_earnings"`
+	AvgRate       float64 `json:"avg_rate"`
+	MinRate       float64 `json:"min_rate"`
+	MaxRate       float64 `json:"max_rate"`
+	AvgPeriod     float64 `json:"avg_period"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// SaveDailyEarningSummary 保存每日收益汇总数据
+func (c *Client) SaveDailyEarningSummary(summary *DailyEarningSummary) error {
+	query := `
+		INSERT INTO daily_earnings_summary 
+		(currency, summary_date, total_trades, total_amount, total_earnings, avg_rate, min_rate, max_rate, avg_period)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+		total_trades = VALUES(total_trades),
+		total_amount = VALUES(total_amount),
+		total_earnings = VALUES(total_earnings),
+		avg_rate = VALUES(avg_rate),
+		min_rate = VALUES(min_rate),
+		max_rate = VALUES(max_rate),
+		avg_period = VALUES(avg_period),
+		updated_at = CURRENT_TIMESTAMP`
+
+	_, err := c.db.Exec(query, 
+		summary.Currency, summary.SummaryDate, summary.TotalTrades, summary.TotalAmount,
+		summary.TotalEarnings, summary.AvgRate, summary.MinRate, summary.MaxRate, summary.AvgPeriod)
+	if err != nil {
+		return fmt.Errorf("failed to save daily earning summary: %w", err)
+	}
+
+	return nil
+}
+
+// GetDailyEarningSummary 获取指定日期的每日收益汇总
+func (c *Client) GetDailyEarningSummary(currency string, summaryDate string) (*DailyEarningSummary, error) {
+	query := `
+		SELECT id, currency, summary_date, total_trades, total_amount, total_earnings, 
+			   avg_rate, min_rate, max_rate, avg_period, created_at, updated_at
+		FROM daily_earnings_summary 
+		WHERE currency = ? AND summary_date = ?`
+
+	summary := &DailyEarningSummary{}
+	err := c.db.QueryRow(query, currency, summaryDate).Scan(
+		&summary.ID, &summary.Currency, &summary.SummaryDate,
+		&summary.TotalTrades, &summary.TotalAmount, &summary.TotalEarnings,
+		&summary.AvgRate, &summary.MinRate, &summary.MaxRate, &summary.AvgPeriod,
+		&summary.CreatedAt, &summary.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // 没有记录
+		}
+		return nil, fmt.Errorf("failed to get daily earning summary: %w", err)
+	}
+
+	return summary, nil
+}
+
+// GetRecentDailyEarningSummaries 获取最近的每日收益汇总列表
+func (c *Client) GetRecentDailyEarningSummaries(currency string, days int) ([]*DailyEarningSummary, error) {
+	query := `
+		SELECT id, currency, summary_date, total_trades, total_amount, total_earnings,
+			   avg_rate, min_rate, max_rate, avg_period, created_at, updated_at
+		FROM daily_earnings_summary 
+		WHERE currency = ?
+		ORDER BY summary_date DESC 
+		LIMIT ?`
+
+	rows, err := c.db.Query(query, currency, days)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query daily earning summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []*DailyEarningSummary
+	for rows.Next() {
+		summary := &DailyEarningSummary{}
+		err := rows.Scan(
+			&summary.ID, &summary.Currency, &summary.SummaryDate,
+			&summary.TotalTrades, &summary.TotalAmount, &summary.TotalEarnings,
+			&summary.AvgRate, &summary.MinRate, &summary.MaxRate, &summary.AvgPeriod,
+			&summary.CreatedAt, &summary.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan daily earning summary: %w", err)
+		}
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, rows.Err()
+}
+
+// SaveDailyEarningSummaryParams 接口适配器方法，用于兼容 bitfinex.DatabaseSaver 接口
+func (c *Client) SaveDailyEarningSummaryParams(currency, summaryDate string, totalTrades int, totalAmount, totalEarnings, avgRate, minRate, maxRate, avgPeriod float64) error {
+	summary := &DailyEarningSummary{
+		Currency:      currency,
+		SummaryDate:   summaryDate,
+		TotalTrades:   totalTrades,
+		TotalAmount:   totalAmount,
+		TotalEarnings: totalEarnings,
+		AvgRate:       avgRate,
+		MinRate:       minRate,
+		MaxRate:       maxRate,
+		AvgPeriod:     avgPeriod,
+	}
+	return c.SaveDailyEarningSummary(summary)
+}

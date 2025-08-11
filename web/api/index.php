@@ -19,6 +19,7 @@ $routes = [
     'commands' => 'commands.php',
     'status' => 'status.php',
     'config' => 'config.php',
+    'earnings' => 'earnings.php',
 ];
 
 // 获取路由参数

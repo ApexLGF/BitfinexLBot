@@ -80,6 +80,10 @@ make clean                        # 清理构建产物
 make config-example               # 从示例创建配置文件
 make security-check               # 检查敏感信息
 make release                      # 构建发布包
+make deps                         # 检查和更新依赖
+make install                      # 安装到系统路径
+make uninstall                    # 从系统路径卸载
+make docker-build                 # 构建 Docker 镜像
 ```
 
 ## 配置管理
@@ -110,7 +114,13 @@ BitfinexLendingBot/
 │   ├── schema.sql           # MySQL 数据库结构
 │   └── mysql.cnf            # MySQL 配置
 ├── web/                     # Web 管理界面
-│   └── index.html           # 主页面 (Bootstrap + JavaScript)
+│   ├── index.html           # 主页面 (Bootstrap + JavaScript)
+│   └── api/                 # Web API 接口
+│       ├── index.php        # 主 API 入口点
+│       ├── status.php       # 机器人状态 API
+│       ├── config.php       # 配置管理 API
+│       ├── commands.php     # 命令处理 API
+│       └── earnings.php     # 收益数据 API
 └── internal/                 # 内部包
     ├── bitfinex/            # Bitfinex API 客户端，包含自定义nonce生成器
     ├── config/              # 配置管理
@@ -221,13 +231,19 @@ http://localhost:8081    # phpMyAdmin 数据库管理
 docker compose logs -f bitfinex-bot
 
 # 检查数据库状态
-docker compose exec mysql mysql -u root -p bitfinex_bot -e "SELECT * FROM bot_status;"
+docker compose exec mysql mysql -u root -p bitfinex_bot_db -e "SELECT * FROM bot_status;"
 
 # 测试API连接
 go run . -c config.yaml --dry-run
 
 # 查看配置文件验证结果
 go run . -c config.yaml --validate-config
+
+# 初始化 Docker 环境
+./docker-setup.sh
+
+# 运行 Docker 测试
+./docker-test.sh
 ```
 
 **常见错误处理**:

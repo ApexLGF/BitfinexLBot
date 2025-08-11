@@ -707,13 +707,13 @@ func (app *Application) updateEarnings() {
 		log.Printf("✅ 24小时收益: %.6f %s", dailyEarnings, app.config.Currency)
 	}
 
-	// 获取过去7天收益
-	weeklyEarnings, err := app.lendingBot.GetClient().GetWeeklyFundingEarnings(app.config.Currency)
+	// 获取过去7天收益并保存每日收益数据到数据库
+	weeklyEarnings, err := app.lendingBot.GetClient().GetWeeklyFundingEarningsWithDB(app.config.Currency, app.dbClient)
 	if err != nil {
 		log.Printf("获取1周收益失败: %v", err)
 	} else {
 		status.WeeklyEarned = weeklyEarnings
-		log.Printf("✅ 1周收益: %.6f %s", weeklyEarnings, app.config.Currency)
+		log.Printf("✅ 1周收益: %.6f %s (已保存每日收益数据)", weeklyEarnings, app.config.Currency)
 	}
 
 	// 保存更新的状态

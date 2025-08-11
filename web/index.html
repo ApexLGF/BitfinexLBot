@@ -6,6 +6,7 @@
     <title>BitfinexBot 管理面板</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <style>
         .status-running { color: #198754; }
         .status-stopped { color: #dc3545; }
@@ -170,6 +171,55 @@
                         <i class="bi bi-bank fs-1"></i>
                         <h5 class="card-title mt-2">24小时/1周收益</h5>
                         <p class="card-text fs-4" id="totalEarnings">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 收益趋势图表 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-graph-up"></i> 收益趋势图 <small class="text-muted">(最近30天)</small>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-12 col-md-3">
+                                <div class="text-center p-2 bg-light rounded">
+                                    <div class="fw-bold text-success fs-6" id="chartTotalEarnings">$0.00</div>
+                                    <small class="text-muted">30天总收益</small>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <div class="text-center p-2 bg-light rounded">
+                                    <div class="fw-bold text-info fs-6" id="chartAvgDailyEarnings">$0.00</div>
+                                    <small class="text-muted">日均收益</small>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <div class="text-center p-2 bg-light rounded">
+                                    <div class="fw-bold text-warning fs-6" id="chartMaxDailyEarnings">$0.00</div>
+                                    <small class="text-muted">最高日收益</small>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <div class="text-center p-2 bg-light rounded">
+                                    <div class="fw-bold text-primary fs-6" id="chartTradingDays">0天</div>
+                                    <small class="text-muted">有效交易天数</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-container" style="position: relative; height: 400px;">
+                            <canvas id="earningsChart"></canvas>
+                        </div>
+                        <div class="text-center mt-3">
+                            <button class="btn btn-outline-primary btn-sm" onclick="refreshEarningsChart()">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新图表
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -506,6 +556,10 @@
             
             // 初始加载其他数据（不参与自动轮询）
             loadInitialData();
+            
+            // 初始化图表
+            initializeEarningsChart();
+            loadEarningsChartData();
             
             // 检查并修复可能存在的状态不一致问题
             setTimeout(checkInitialCommandStatus, 2000);
@@ -1956,10 +2010,190 @@
         
         // 显示配置更新状态
         
-        // 页面加载时自动加载当前配置
-        document.addEventListener('DOMContentLoaded', function() {
-            loadCurrentConfig();
-        });
+        // 收益图表相关功能
+        let earningsChart = null;
+        
+        
+        // 初始化收益图表
+        function initializeEarningsChart() {
+            const ctx = document.getElementById('earningsChart').getContext('2d');
+            
+            earningsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '每日收益 (USD)',
+                        data: [],
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#198754',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '每日收益趋势',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#198754',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    return `收益: $${parseFloat(context.parsed.y).toFixed(6)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '日期'
+                            },
+                            ticks: {
+                                maxTicksLimit: 10
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '收益 (USD)'
+                            },
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 加载收益图表数据
+        async function loadEarningsChartData() {
+            try {
+                // 设置图表为加载状态
+                updateChartLoadingState(true);
+                
+                // 获取最近30天的收益数据
+                const response = await fetch(`${API_BASE}?endpoint=earnings&action=chart&days=30`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateEarningsChart(data.data);
+                } else {
+                    throw new Error(data.error || '获取收益数据失败');
+                }
+            } catch (error) {
+                console.error('Failed to load earnings chart data:', error);
+                showChartError('无法加载收益数据: ' + error.message);
+            } finally {
+                updateChartLoadingState(false);
+            }
+        }
+        
+        // 更新收益图表
+        function updateEarningsChart(data) {
+            if (!earningsChart || !data || !data.earnings) {
+                return;
+            }
+            
+            // 处理数据
+            const earnings = data.earnings || [];
+            const labels = earnings.map(item => {
+                const date = new Date(item.date);
+                return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+            });
+            const values = earnings.map(item => parseFloat(item.total_earnings) || 0);
+            
+            // 更新图表数据
+            earningsChart.data.labels = labels;
+            earningsChart.data.datasets[0].data = values;
+            earningsChart.update();
+            
+            // 更新统计信息
+            updateChartStatistics(data.statistics);
+            
+            console.log('图表数据已更新:', { labels: labels.length, values: values.length });
+        }
+        
+        // 更新图表统计信息
+        function updateChartStatistics(stats) {
+            if (!stats) return;
+            
+            document.getElementById('chartTotalEarnings').textContent = `$${parseFloat(stats.total_earnings || 0).toFixed(2)}`;
+            document.getElementById('chartAvgDailyEarnings').textContent = `$${parseFloat(stats.avg_daily_earnings || 0).toFixed(2)}`;
+            document.getElementById('chartMaxDailyEarnings').textContent = `$${parseFloat(stats.max_daily_earnings || 0).toFixed(2)}`;
+            document.getElementById('chartTradingDays').textContent = `${stats.trading_days || 0}天`;
+        }
+        
+        // 设置图表加载状态
+        function updateChartLoadingState(isLoading) {
+            const chartContainer = document.querySelector('.chart-container');
+            const refreshButton = document.querySelector('button[onclick="refreshEarningsChart()"]');
+            
+            if (isLoading) {
+                chartContainer.style.opacity = '0.6';
+                if (refreshButton) {
+                    refreshButton.disabled = true;
+                    refreshButton.innerHTML = '<i class="bi bi-hourglass-split"></i> 加载中...';
+                }
+            } else {
+                chartContainer.style.opacity = '1';
+                if (refreshButton) {
+                    refreshButton.disabled = false;
+                    refreshButton.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 刷新图表';
+                }
+            }
+        }
+        
+        // 显示图表错误
+        function showChartError(message) {
+            const ctx = document.getElementById('earningsChart').getContext('2d');
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            
+            // 在画布上绘制错误信息
+            ctx.fillStyle = '#6c757d';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('图表加载失败', ctx.canvas.width / 2, ctx.canvas.height / 2 - 20);
+            ctx.fillText(message, ctx.canvas.width / 2, ctx.canvas.height / 2 + 10);
+            
+            showToast('错误', message, 'danger');
+        }
+        
+        // 刷新收益图表
+        async function refreshEarningsChart() {
+            await loadEarningsChartData();
+        }
     </script>
     
 </body>
