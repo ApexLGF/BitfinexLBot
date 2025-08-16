@@ -148,8 +148,13 @@ func (ma *MarketAnalyzer) determineTrend() string {
 
 // AnalyzeCompetition 分析競爭對手
 func (ma *MarketAnalyzer) AnalyzeCompetition(fundingBook []*bitfinex.FundingBookEntry) float64 {
-	if len(fundingBook) < 10 {
+	if len(fundingBook) == 0 {
 		return 0.0
+	}
+	
+	if len(fundingBook) < 10 {
+		// 如果数据不足10个，直接返回最佳利率
+		return fundingBook[0].Rate
 	}
 
 	// 分析前10層的平均利率差
@@ -165,7 +170,7 @@ func (ma *MarketAnalyzer) AnalyzeCompetition(fundingBook []*bitfinex.FundingBook
 	}
 
 	if validSpreads == 0 {
-		return 0.0
+		return fundingBook[0].Rate
 	}
 
 	avgSpread := totalSpread / float64(validSpreads)

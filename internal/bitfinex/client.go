@@ -11,30 +11,31 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
-	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
 	"github.com/bitfinexcom/bitfinex-api-go/v2/rest"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
-	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 )
 
 // Client Bitfinex API 客戶端封裝
 type Client struct {
-	restClient *rest.Client
-	apiKey     string
-	secretKey  string
+	restClient   *rest.Client
+	apiKey       string
+	secretKey    string
+	nonceManager *NonceManager
+	apiMutex     sync.Mutex // 全局API调用锁
 }
 
 // NewClient 創建新的 Bitfinex 客戶端
 func NewClient(apiKey, secretKey string) *Client {
 	client := rest.NewClient().Credentials(apiKey, secretKey)
 	return &Client{
-		restClient: client,
-		apiKey:     apiKey,
-		secretKey:  secretKey,
+		restClient:   client,
+		apiKey:       apiKey,
+		secretKey:    secretKey,
+		nonceManager: NewNonceManager(),
 	}
 }
 
@@ -86,46 +87,88 @@ type Candle struct {
 
 // GetFundingOffers 獲取未完成的資金貸出訂單
 func (c *Client) GetFundingOffers(symbol string) ([]*FundingOffer, error) {
-	offers, err := c.restClient.Funding.Offers(symbol)
+	// 构建请求路径
+	path := fmt.Sprintf("/v2/auth/r/funding/offers/%s", symbol)
+	
+	// 构建请求体（空请求体）
+	requestBody := map[string]interface{}{}
+	
+	// 执行认证请求
+	response, err := c.makeAuthenticatedRequest("POST", path, requestBody)
 	if err != nil {
-		// 處理特殊的空響應錯誤
-		if strings.Contains(err.Error(), "data slice too short for funding offer") {
+		// 处理特殊的空响应错误
+		if strings.Contains(err.Error(), "data slice too short") {
 			return []*FundingOffer{}, nil
 		}
-		return nil, errors.NewAPIError("failed to get funding offers", err)
+		return nil, fmt.Errorf("failed to get funding offers: %w", err)
 	}
-
-	// 處理空響應或無數據的情況
-	if offers == nil || offers.Snapshot == nil || len(offers.Snapshot) == 0 {
-		return []*FundingOffer{}, nil
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.Unmarshal(response, &rawData); err != nil {
+		return nil, fmt.Errorf("failed to parse funding offers response: %w", err)
 	}
-
-	result := make([]*FundingOffer, 0, len(offers.Snapshot))
-	for _, offer := range offers.Snapshot {
-		// 添加安全檢查，防止空數據導致panic
-		if offer == nil {
+	
+	// 转换数据
+	result := make([]*FundingOffer, 0, len(rawData))
+	for _, raw := range rawData {
+		if len(raw) < 16 { // 确保有足够的字段
 			continue
 		}
-		result = append(result, &FundingOffer{
-			ID:     offer.ID,
-			Amount: offer.Amount,
-			Rate:   offer.Rate, // API 已返回日利率
-			Period: int(offer.Period),
-		})
+		
+		// Funding offer格式根据实际调试输出: [ID, SYMBOL, MTSCreated, MTSUpdated, AMOUNT, AMOUNT_ORIG, TYPE, FLAGS, STATUS, ?, STATUS, ?, ?, ?, RATE, PERIOD, ...]
+		
+		// [0] ID
+		id, ok := raw[0].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [4] AMOUNT
+		amount, ok := raw[4].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [14] RATE (根据调试输出，实际的RATE在索引14)
+		rate, ok := raw[14].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [15] PERIOD (根据调试输出，实际的PERIOD在索引15)
+		period, ok := raw[15].(float64)
+		if !ok {
+			continue
+		}
+		
+		offer := &FundingOffer{
+			ID:     int64(id),
+			Amount: amount,
+			Rate:   rate, // API 已返回日利率
+			Period: int(period),
+		}
+		
+		result = append(result, offer)
 	}
-
+	
 	return result, nil
 }
 
 // CancelFundingOffer 取消資金貸出訂單
 func (c *Client) CancelFundingOffer(offerID int64) error {
-	cancelReq := &fundingoffer.CancelRequest{
-		ID: offerID,
+	// 构建请求路径
+	path := "/v2/auth/w/funding/offer/cancel"
+	
+	// 构建请求体
+	requestBody := map[string]interface{}{
+		"id": offerID,
 	}
-
-	_, err := c.restClient.Funding.CancelOffer(cancelReq)
+	
+	// 执行认证请求
+	_, err := c.makeAuthenticatedRequest("POST", path, requestBody)
 	if err != nil {
-		return errors.NewOrderError("failed to cancel funding offer", err)
+		return fmt.Errorf("failed to cancel funding offer: %w", err)
 	}
 
 	return nil
@@ -133,18 +176,28 @@ func (c *Client) CancelFundingOffer(offerID int64) error {
 
 // SubmitFundingOffer 提交新的資金貸出訂單
 func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate float64, period int, hidden bool) error {
-	offerReq := &fundingoffer.SubmitRequest{
-		Type:   constants.OfferTypeLIMIT,
-		Symbol: symbol,
-		Amount: amount,
-		Rate:   dailyRate, // v2 API 使用日利率
-		Period: int64(period),
-		Hidden: hidden,
+	// 构建请求路径
+	path := "/v2/auth/w/funding/offer/submit"
+	
+	// 构建请求体
+	flags := 0
+	if hidden {
+		flags = 64 // HIDDEN flag
 	}
-
-	_, err := c.restClient.Funding.SubmitOffer(offerReq)
+	
+	requestBody := map[string]interface{}{
+		"type":   constants.OfferTypeLIMIT,
+		"symbol": symbol,
+		"amount": strconv.FormatFloat(amount, 'f', -1, 64),
+		"rate":   strconv.FormatFloat(dailyRate, 'f', -1, 64), // v2 API 使用日利率
+		"period": period,
+		"flags":  flags,
+	}
+	
+	// 执行认证请求
+	_, err := c.makeAuthenticatedRequest("POST", path, requestBody)
 	if err != nil {
-		return errors.NewOrderError("failed to submit funding offer", err)
+		return fmt.Errorf("failed to submit funding offer: %w", err)
 	}
 
 	return nil
@@ -152,21 +205,67 @@ func (c *Client) SubmitFundingOffer(symbol string, amount float64, dailyRate flo
 
 // GetWallets 獲取錢包信息
 func (c *Client) GetWallets() ([]*Wallet, error) {
-	wallets, err := c.restClient.Wallet.Wallet()
+	// 构建请求路径
+	path := "/v2/auth/r/wallets"
+	
+	// 构建请求体（空请求体）
+	requestBody := map[string]interface{}{}
+	
+	// 执行认证请求
+	response, err := c.makeAuthenticatedRequest("POST", path, requestBody)
 	if err != nil {
-		return nil, errors.NewAPIError("failed to get wallets", err)
+		return nil, fmt.Errorf("failed to get wallets: %w", err)
 	}
-
-	result := make([]*Wallet, 0, len(wallets.Snapshot))
-	for _, w := range wallets.Snapshot {
-		result = append(result, &Wallet{
-			Currency:  w.Currency,
-			Type:      w.Type,
-			Balance:   w.Balance,
-			Available: w.BalanceAvailable,
-		})
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.Unmarshal(response, &rawData); err != nil {
+		return nil, fmt.Errorf("failed to parse wallets response: %w", err)
 	}
-
+	
+	// 转换数据
+	result := make([]*Wallet, 0, len(rawData))
+	for _, raw := range rawData {
+		if len(raw) < 5 { // 确保有足够的字段
+			continue
+		}
+		
+		// Wallet格式: [WALLET_TYPE, CURRENCY, BALANCE, UNSETTLED_INTEREST, BALANCE_AVAILABLE]
+		
+		// [0] WALLET_TYPE
+		walletType, ok := raw[0].(string)
+		if !ok {
+			continue
+		}
+		
+		// [1] CURRENCY
+		currency, ok := raw[1].(string)
+		if !ok {
+			continue
+		}
+		
+		// [2] BALANCE
+		balance, ok := raw[2].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [4] BALANCE_AVAILABLE
+		available, ok := raw[4].(float64)
+		if !ok {
+			continue
+		}
+		
+		wallet := &Wallet{
+			Currency:  currency,
+			Type:      walletType,
+			Balance:   balance,
+			Available: available,
+		}
+		
+		result = append(result, wallet)
+	}
+	
 	return result, nil
 }
 
@@ -195,23 +294,67 @@ func (c *Client) GetFundingBook(symbol string, limit int) ([]*FundingBookEntry, 
 		limit = constants.DefaultPriceLevels
 	}
 
-	book, err := c.restClient.Book.All(symbol, common.PrecisionRawBook, limit)
+	// 使用公共API获取资金订单簿（不需要认证）
+	url := fmt.Sprintf("https://api-pub.bitfinex.com/v2/book/%s/R0", symbol)
+
+	resp, err := http.Get(url)
 	if err != nil {
-		return nil, errors.NewAPIError("failed to get funding book", err)
+		return nil, fmt.Errorf("failed to get funding book: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status code %d", resp.StatusCode)
 	}
 
-	if len(book.Snapshot) == 0 {
+	var rawData [][]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
+		return nil, fmt.Errorf("failed to decode funding book response: %w", err)
+	}
+
+	if len(rawData) == 0 {
 		return []*FundingBookEntry{}, nil
 	}
 
-	result := make([]*FundingBookEntry, 0, len(book.Snapshot))
-	for _, entry := range book.Snapshot {
-		result = append(result, &FundingBookEntry{
-			Rate:   entry.Rate, // API 已返回日利率
-			Amount: entry.Amount,
-			Period: int(entry.Period),
-			Count:  int(entry.Count),
-		})
+	result := make([]*FundingBookEntry, 0, len(rawData))
+	for i, raw := range rawData {
+		// 限制数量
+		if i >= limit {
+			break
+		}
+		
+		if len(raw) < 4 { // 确保有足够的字段
+			continue
+		}
+		
+		// Book entry格式根据实际API响应: [ID, PERIOD, RATE, AMOUNT]
+		
+		// [1] PERIOD
+		period, ok := raw[1].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [2] RATE (实际的RATE在索引2)
+		rate, ok := raw[2].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [3] AMOUNT
+		amount, ok := raw[3].(float64)
+		if !ok {
+			continue
+		}
+		
+		entry := &FundingBookEntry{
+			Rate:   rate, // API 已返回日利率
+			Amount: amount,
+			Period: int(period),
+			Count:  1, // 设为固定值1，因为API没有返回COUNT字段
+		}
+		
+		result = append(result, entry)
 	}
 
 	return result, nil
@@ -224,28 +367,28 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, errors.NewAPIError("failed to get funding ticker", err)
+		return 0, fmt.Errorf("failed to get funding ticker: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, errors.NewAPIError(fmt.Sprintf("API returned status code %d", resp.StatusCode), nil)
+		return 0, fmt.Errorf("API returned status code %d", resp.StatusCode)
 	}
 
 	var tickerData []interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&tickerData); err != nil {
-		return 0, errors.NewAPIError("failed to decode ticker response", err)
+		return 0, fmt.Errorf("failed to decode ticker response: %w", err)
 	}
 
 	// 檢查響應數據格式
 	if len(tickerData) < 2 {
-		return 0, errors.NewAPIError("invalid ticker response format", nil)
+		return 0, fmt.Errorf("invalid ticker response format")
 	}
 
 	// 對於 funding symbols，FRR (Flash Return Rate) 在索引 1
 	frr, ok := tickerData[1].(float64)
 	if !ok {
-		return 0, errors.NewAPIError("failed to parse FRR from ticker", nil)
+		return 0, fmt.Errorf("failed to parse FRR from ticker")
 	}
 
 	// FRR 已經是日利率格式
@@ -254,38 +397,101 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 
 // GetFundingCredits 獲取活躍的借貸訂單
 func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
-	credits, err := c.restClient.Funding.Credits(symbol)
+	// 构建请求路径
+	path := fmt.Sprintf("/v2/auth/r/funding/credits/%s", symbol)
+	
+	// 构建请求体（空请求体）
+	requestBody := map[string]interface{}{}
+	
+	// 执行认证请求
+	response, err := c.makeAuthenticatedRequest("POST", path, requestBody)
 	if err != nil {
-		// 處理特殊的空響應錯誤
+		// 处理特殊的空响应错误
 		if strings.Contains(err.Error(), "data slice too short") {
 			return []*FundingCredit{}, nil
 		}
-		return nil, errors.NewAPIError("failed to get funding credits", err)
+		return nil, fmt.Errorf("failed to get funding credits: %w", err)
 	}
-
-	// 處理空響應或無數據的情況
-	if credits == nil || credits.Snapshot == nil || len(credits.Snapshot) == 0 {
-		return []*FundingCredit{}, nil
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.Unmarshal(response, &rawData); err != nil {
+		return nil, fmt.Errorf("failed to parse funding credits response: %w", err)
 	}
-
-	result := make([]*FundingCredit, 0, len(credits.Snapshot))
-	for _, credit := range credits.Snapshot {
-		// 添加安全檢查，防止空數據導致panic
-		if credit == nil {
+	
+	// 转换数据
+	result := make([]*FundingCredit, 0, len(rawData))
+	for _, raw := range rawData {
+		if len(raw) < 13 { // 确保有足够的字段
 			continue
 		}
-		result = append(result, &FundingCredit{
-			ID:         credit.ID,
-			Symbol:     credit.Symbol,
-			Amount:     credit.Amount,
-			Rate:       credit.Rate, // API 已返回日利率
-			Period:     credit.Period,
-			MTSCreated: credit.MTSCreated,
-			MTSOpened:  credit.MTSOpened,
-			Status:     credit.Status,
-		})
+		
+		// Funding credit格式根据实际调试输出: [ID, SYMBOL, SIDE, MTSCreated, MTSUpdated, AMOUNT, FLAGS, STATUS, TYPE, ?, ?, RATE, PERIOD, MTSOpened, ...]
+		
+		// [0] ID
+		id, ok := raw[0].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [1] SYMBOL
+		symbol, ok := raw[1].(string)
+		if !ok {
+			continue
+		}
+		
+		// [3] MTSCreated
+		mtsCreated, ok := raw[3].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [5] AMOUNT
+		amount, ok := raw[5].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [7] STATUS
+		status, ok := raw[7].(string)
+		if !ok {
+			continue
+		}
+		
+		// [11] RATE (根据调试输出，RATE在索引11)
+		rate, ok := raw[11].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [12] PERIOD (根据调试输出，PERIOD在索引12)
+		period, ok := raw[12].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [13] MTSOpened (根据调试输出，MTSOpened在索引13)
+		mtsOpened := int64(0)
+		if len(raw) > 13 && raw[13] != nil {
+			if opened, ok := raw[13].(float64); ok {
+				mtsOpened = int64(opened)
+			}
+		}
+		
+		credit := &FundingCredit{
+			ID:         int64(id),
+			Symbol:     symbol,
+			Amount:     amount,
+			Rate:       rate, // API 已返回日利率
+			Period:     int64(period),
+			MTSCreated: int64(mtsCreated),
+			MTSOpened:  mtsOpened,
+			Status:     status,
+		}
+		
+		result = append(result, credit)
 	}
-
+	
 	return result, nil
 }
 
@@ -300,18 +506,18 @@ func (c *Client) GetFundingCandles(symbol string, timeFrame string, limit int) (
 	// 發送 HTTP 請求
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, errors.NewAPIError("failed to get funding candles", err)
+		return nil, fmt.Errorf("failed to get funding candles: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.NewAPIError(fmt.Sprintf("API returned status code %d", resp.StatusCode), nil)
+		return nil, fmt.Errorf("API returned status code %d", resp.StatusCode)
 	}
 
 	// 解析響應
 	var rawData [][]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
-		return nil, errors.NewAPIError("failed to decode candles response", err)
+		return nil, fmt.Errorf("failed to decode candles response: %w", err)
 	}
 
 	// 轉換為 Candle 結構
@@ -467,6 +673,12 @@ func (c *Client) GetFundingLedgers(currency string, start, end int64, limit int)
 
 // makeAuthenticatedRequest 执行Bitfinex认证请求
 func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]interface{}) ([]byte, error) {
+	// 使用全局锁确保API调用串行执行，避免nonce冲突
+	c.apiMutex.Lock()
+	defer c.apiMutex.Unlock()
+	
+	// 添加延迟以遵守Bitfinex API频率限制（10-90请求/分钟）
+	time.Sleep(1 * time.Second)
 	// Bitfinex API base URL
 	baseURL := "https://api-pub.bitfinex.com"
 	
@@ -476,8 +688,8 @@ func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]i
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 	
-	// 生成nonce（微秒时间戳）
-	nonce := strconv.FormatInt(time.Now().UnixNano()/1000, 10)
+	// 使用统一的nonce管理器生成nonce
+	nonce := c.nonceManager.GetNextNonce()
 	
 	// 构建签名载荷
 	payload := "/api" + path + nonce + string(bodyBytes)
@@ -516,6 +728,13 @@ func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]i
 	// 检查HTTP状态码
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
+	}
+	
+	// 调试输出：打印API响应（仅用于诊断）
+	if strings.Contains(path, "funding/offers") || strings.Contains(path, "funding/credits") {
+		fmt.Printf("[DEBUG] API Path: %s\n", path)
+		fmt.Printf("[DEBUG] Response Body: %s\n", string(responseBody))
+		fmt.Printf("[DEBUG] Response Length: %d bytes\n", len(responseBody))
 	}
 	
 	return responseBody, nil
