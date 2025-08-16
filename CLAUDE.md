@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/config`: 使用 Viper 的配置管理（YAML 配置 + 环境变量）
 - `internal/strategy`: 放贷策略实现和市场分析
 - `internal/bitfinex`: Bitfinex API v2 REST 客户端封装
-- `internal/telegram`: Telegram 机器人集成，用于监控和配置
+- `internal/api`: Web API 服务器和处理器（替代原 Telegram Bot）
 - `internal/rates`: 利率计算和转换工具
 - `internal/constants`: 应用常量和枚举
 - `internal/errors`: 统一错误处理
@@ -60,6 +60,14 @@ gofmt -w .                        # 格式化所有 Go 文件
 go vet ./...                      # 静态分析
 ```
 
+**Docker 和 Web 界面**:
+```bash
+make docker-build                 # 构建 Docker 镜像
+docker compose up -d              # 启动 Web 服务（推荐）
+docker compose down               # 停止 Web 服务
+docker compose up -d --build      # 重新构建并启动
+```
+
 **其他工具**:
 ```bash
 make clean                        # 清理构建产物
@@ -70,7 +78,7 @@ make release                      # 构建发布包
 
 ## 配置管理
 
-**主要配置**: `config.yaml` 包含所有机器人参数，包括 API 密钥、放贷策略和 Telegram 设置。
+**主要配置**: `config.yaml` 包含所有机器人参数，包括 API 密钥、放贷策略和 Web API 设置。
 
 **关键设置**:
 - `BITFINEX_API_KEY` / `BITFINEX_SECRET_KEY`: 交易凭证

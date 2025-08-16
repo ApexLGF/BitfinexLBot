@@ -1,10 +1,17 @@
 package bitfinex
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/fundingoffer"
@@ -17,6 +24,8 @@ import (
 // Client Bitfinex API 客戶端封裝
 type Client struct {
 	restClient *rest.Client
+	apiKey     string
+	secretKey  string
 }
 
 // NewClient 創建新的 Bitfinex 客戶端
@@ -24,6 +33,8 @@ func NewClient(apiKey, secretKey string) *Client {
 	client := rest.NewClient().Credentials(apiKey, secretKey)
 	return &Client{
 		restClient: client,
+		apiKey:     apiKey,
+		secretKey:  secretKey,
 	}
 }
 
@@ -353,4 +364,159 @@ func (c *Client) GetFundingCandles(symbol string, timeFrame string, limit int) (
 	}
 
 	return candles, nil
+}
+
+// LedgerEntry 账本条目
+type LedgerEntry struct {
+	ID          int64   `json:"id"`
+	Currency    string  `json:"currency"`
+	Amount      float64 `json:"amount"`
+	Balance     float64 `json:"balance"`
+	Description string  `json:"description"`
+	Timestamp   int64   `json:"timestamp"`
+}
+
+// GetFundingLedgers 获取资金账本记录
+func (c *Client) GetFundingLedgers(currency string, start, end int64, limit int) ([]*LedgerEntry, error) {
+	// 构建请求路径
+	path := fmt.Sprintf("/v2/auth/r/ledgers/%s/hist", currency)
+	
+	// 构建请求体
+	requestBody := map[string]interface{}{
+		"limit": limit,
+	}
+	
+	if start > 0 {
+		requestBody["start"] = start
+	}
+	if end > 0 {
+		requestBody["end"] = end
+	}
+	
+	// 执行认证请求
+	response, err := c.makeAuthenticatedRequest("POST", path, requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get funding ledgers: %w", err)
+	}
+	
+	// 解析响应
+	var rawData [][]interface{}
+	if err := json.Unmarshal(response, &rawData); err != nil {
+		return nil, fmt.Errorf("failed to parse ledgers response: %w", err)
+	}
+	
+	// 转换数据
+	var ledgers []*LedgerEntry
+	for _, raw := range rawData {
+		if len(raw) < 9 { // 确保有足够的字段
+			continue
+		}
+		
+		// [0] ID
+		id, ok := raw[0].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [1] CURRENCY
+		currency, ok := raw[1].(string)
+		if !ok {
+			continue
+		}
+		
+		// [3] MTS (timestamp in milliseconds)
+		timestamp, ok := raw[3].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [5] AMOUNT
+		amount, ok := raw[5].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [6] BALANCE
+		balance, ok := raw[6].(float64)
+		if !ok {
+			continue
+		}
+		
+		// [8] DESCRIPTION
+		description := ""
+		if len(raw) > 8 && raw[8] != nil {
+			if desc, ok := raw[8].(string); ok {
+				description = desc
+			}
+		}
+		
+		ledger := &LedgerEntry{
+			ID:          int64(id),
+			Currency:    currency,
+			Amount:      amount,
+			Balance:     balance,
+			Description: description,
+			Timestamp:   int64(timestamp),
+		}
+		
+		ledgers = append(ledgers, ledger)
+	}
+	
+	return ledgers, nil
+}
+
+// makeAuthenticatedRequest 执行Bitfinex认证请求
+func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]interface{}) ([]byte, error) {
+	// Bitfinex API base URL
+	baseURL := "https://api-pub.bitfinex.com"
+	
+	// 序列化请求体
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	
+	// 生成nonce（微秒时间戳）
+	nonce := strconv.FormatInt(time.Now().UnixNano()/1000, 10)
+	
+	// 构建签名载荷
+	payload := "/api" + path + nonce + string(bodyBytes)
+	
+	// 计算HMAC-SHA384签名
+	h := hmac.New(sha512.New384, []byte(c.secretKey))
+	h.Write([]byte(payload))
+	signature := hex.EncodeToString(h.Sum(nil))
+	
+	// 创建HTTP请求
+	req, err := http.NewRequest(method, baseURL+path, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	
+	// 设置必要的头部
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("bfx-nonce", nonce)
+	req.Header.Set("bfx-apikey", c.apiKey)
+	req.Header.Set("bfx-signature", signature)
+	
+	// 发送请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	// 读取响应
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	
+	// 检查HTTP状态码
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
+	}
+	
+	return responseBody, nil
 }

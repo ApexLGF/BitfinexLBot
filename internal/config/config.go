@@ -1,11 +1,14 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 	"github.com/ApexLGF/BitfinexLBot/internal/errors"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // Config 應用程式配置結構
@@ -62,6 +65,13 @@ type Config struct {
 	// 測試模式設定
 	TestMode bool `mapstructure:"TEST_MODE"`
 
+	// API 服務配置
+	APIEnabled     bool     `mapstructure:"API_ENABLED"`      // 啟用REST API服務
+	APIPort        int      `mapstructure:"API_PORT"`         // API服務端口，預設8089
+	APIHost        string   `mapstructure:"API_HOST"`         // API服務主機，預設0.0.0.0
+	APICorsOrigins []string `mapstructure:"API_CORS_ORIGINS"` // CORS允許的源
+	APIAuthToken   string   `mapstructure:"API_AUTH_TOKEN"`   // API認證令牌（可選）
+
 	// 借貸通知設定
 	LastLendingCheckTime int64 // 上次檢查借貸訂單的時間戳
 	LendingCheckMinutes  int   `mapstructure:"LENDING_CHECK_MINUTES"` // 借貸訂單檢查間隔（分鐘）
@@ -89,6 +99,9 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// 設置借貸檢查間隔的預設值
 	config.setLendingCheckDefaults()
+
+	// 設置API配置的預設值
+	config.setAPIDefaults()
 
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -171,6 +184,16 @@ func (c *Config) Validate() error {
 	// 驗證借貸檢查間隔
 	if c.LendingCheckMinutes <= 0 {
 		return errors.NewValidationError("LENDING_CHECK_MINUTES must be positive")
+	}
+
+	// 驗證API配置
+	if c.APIEnabled {
+		if c.APIPort <= 0 || c.APIPort > 65535 {
+			return errors.NewValidationError("API_PORT must be between 1 and 65535")
+		}
+		if c.APIHost == "" {
+			return errors.NewValidationError("API_HOST is required when API is enabled")
+		}
 	}
 
 	return nil
@@ -259,4 +282,118 @@ func (c *Config) setLendingCheckDefaults() {
 	if c.LendingCheckMinutes == 0 {
 		c.LendingCheckMinutes = 10
 	}
+}
+
+// setAPIDefaults 設置API配置的預設值
+func (c *Config) setAPIDefaults() {
+	// 預設啟用API服務
+	if !c.APIEnabled {
+		c.APIEnabled = true
+	}
+	
+	// 預設端口8090（內部服務端口）
+	if c.APIPort == 0 {
+		c.APIPort = 8090
+	}
+	
+	// 預設綁定所有地址
+	if c.APIHost == "" {
+		c.APIHost = "0.0.0.0"
+	}
+	
+	// 預設CORS設置
+	if len(c.APICorsOrigins) == 0 {
+		c.APICorsOrigins = []string{"*"}
+	}
+}
+
+// SaveConfig 保存配置到文件
+func SaveConfig(configPath string, config map[string]interface{}) error {
+	// 读取现有配置文件以保持格式和注释
+	existingData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read existing config: %w", err)
+	}
+
+	// 解析现有YAML文档以保留注释
+	var existingYAML yaml.Node
+	if err := yaml.Unmarshal(existingData, &existingYAML); err != nil {
+		return fmt.Errorf("failed to parse existing config: %w", err)
+	}
+
+	// 更新配置值
+	if err := updateYAMLNode(&existingYAML, config); err != nil {
+		return fmt.Errorf("failed to update config values: %w", err)
+	}
+
+	// 写回文件
+	updatedData, err := yaml.Marshal(&existingYAML)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// updateYAMLNode 递归更新YAML节点的值，保留结构和注释
+func updateYAMLNode(node *yaml.Node, config map[string]interface{}) error {
+	if node.Kind != yaml.DocumentNode {
+		return nil
+	}
+
+	for _, docNode := range node.Content {
+		if docNode.Kind == yaml.MappingNode {
+			updateMappingNode(docNode, config)
+		}
+	}
+
+	return nil
+}
+
+// updateMappingNode 更新映射节点
+func updateMappingNode(node *yaml.Node, config map[string]interface{}) {
+	for i := 0; i < len(node.Content); i += 2 {
+		if i+1 >= len(node.Content) {
+			break
+		}
+
+		keyNode := node.Content[i]
+		valueNode := node.Content[i+1]
+
+		if keyNode.Kind == yaml.ScalarNode {
+			key := keyNode.Value
+			if newValue, exists := config[key]; exists {
+				// 更新值但保留注释
+				valueNode.Value = formatConfigValue(newValue)
+			}
+		}
+	}
+}
+
+// formatConfigValue 格式化配置值为字符串
+func formatConfigValue(value interface{}) string {
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return fmt.Sprintf("%g", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// ReloadConfig 重新加载配置文件
+func ReloadConfig(configPath string) (*Config, error) {
+	return LoadConfig(configPath)
 }

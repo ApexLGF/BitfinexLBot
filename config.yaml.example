@@ -1,7 +1,7 @@
 BITFINEX_API_KEY: "your_api_key_here"
 BITFINEX_SECRET_KEY: "your_secret_key_here"
 
-CURRENCY: "usd"
+CURRENCY: "USD"
 
 ORDER_LIMIT: 3 # 每次掛單只掛幾筆，避免一次掛太多都成立，錯過大利率
 MINUTES_RUN: 3 # 每隔幾分鐘執行一次
@@ -20,9 +20,6 @@ HIGH_HOLD_AMOUNT: 155
 HIGH_HOLD_ORDERS: 1
 RATE_BONUS: 0.002 # 當下次執行時沒有未成功訂單時就加利率(避免訂單成功全都在低利率上)
 
-TELEGRAM_BOT_TOKEN: "your_telegram_bot_token_here"
-TELEGRAM_AUTH_TOKEN: "your_secure_auth_token_here"
-
 NOTIFY_RATE_THRESHOLD: 0.1
 RESERVE_AMOUNT: 0
 
@@ -33,4 +30,12 @@ MIN_RATE_MULTIPLIER: 0.8        # 最小利率倍數 (預設: 0.8)
 RATE_RANGE_INCREASE_PERCENT: 0.2 # 利率範圍增加百分比 (預設: 0.2 = 20%)
 
 LENDING_CHECK_MINUTES: 5 #每隔五分鐘檢查是否有成功借貸的訂單
+
+# API 服務配置
+API_ENABLED: true         # 啟用REST API和Web界面
+API_PORT: 8090            # API服务端口，预设8090（内部端口，Nginx代理到8089）
+API_HOST: "127.0.0.1"     # 绑定地址，127.0.0.1表示仅本地访问（通过Nginx代理）
+API_CORS_ORIGINS: ["*"]   # CORS允許的源，*表示允許所有源
+API_AUTH_TOKEN: ""        # API認證令牌（可選，留空表示不需要認證）
+
 TEST_MODE: true

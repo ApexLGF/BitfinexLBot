@@ -12,19 +12,20 @@ import (
 
 	"github.com/urfave/cli"
 
+	"github.com/ApexLGF/BitfinexLBot/internal/api"
 	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 	"github.com/ApexLGF/BitfinexLBot/internal/config"
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 	"github.com/ApexLGF/BitfinexLBot/internal/rates"
 	"github.com/ApexLGF/BitfinexLBot/internal/strategy"
-	"github.com/ApexLGF/BitfinexLBot/internal/telegram"
 )
 
 // Application 應用程式主結構
 type Application struct {
 	config        *config.Config
 	bfxClient     *bitfinex.Client
-	telegramBot   *telegram.Bot
+	apiServer     *api.Server
+	apiHandler    *api.Handler
 	lendingBot    *strategy.LendingBot
 	rateConverter *rates.Converter
 
@@ -45,12 +46,6 @@ func NewApplication(configPath string) (*Application, error) {
 	// 創建 Bitfinex 客戶端
 	bfxClient := bitfinex.NewClient(cfg.BitfinexApiKey, cfg.BitfinexSecretKey)
 
-	// 創建 Telegram 機器人
-	telegramBot, err := telegram.NewBot(cfg, bfxClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
-	}
-
 	// 創建貸出機器人
 	lendingBot := strategy.NewLendingBot(cfg, bfxClient)
 
@@ -60,24 +55,33 @@ func NewApplication(configPath string) (*Application, error) {
 	// 創建 context 和 cancel 函數
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// 創建API處理器和服務器
+	var apiHandler *api.Handler
+	var apiServer *api.Server
+	
+	if cfg.APIEnabled {
+		apiHandler = api.NewHandler(cfg, bfxClient, lendingBot, configPath)
+		apiServer = api.NewServer(cfg.APIPort, cfg.APIHost, apiHandler)
+	}
+
 	app := &Application{
 		config:        cfg,
 		bfxClient:     bfxClient,
-		telegramBot:   telegramBot,
+		apiServer:     apiServer,
+		apiHandler:    apiHandler,
 		lendingBot:    lendingBot,
 		rateConverter: rateConverter,
 		ctx:           ctx,
 		cancel:        cancel,
 	}
 
-	// 設置 Telegram bot 重啟回調
-	telegramBot.SetRestartCallback(app.handleRestart)
-
-	// 設置借貸機器人的通知回調
-	lendingBot.SetNotifyCallback(telegramBot.SendNotification)
-
-	// 設置 Telegram bot 的借貸機器人引用
-	telegramBot.SetLendingBot(lendingBot)
+	// 設置借貸機器人的通知回調（如果有API處理器）
+	if apiHandler != nil {
+		// 設置初始狀態
+		apiHandler.SetRunning(true)
+		// 這裡可以設置日志回調或其他通知方式
+		// lendingBot.SetNotifyCallback(apiHandler.LogNotification)
+	}
 
 	return app, nil
 }
@@ -122,12 +126,16 @@ func (app *Application) Run() error {
 
 // startWorkers 啟動所有工作 goroutines
 func (app *Application) startWorkers() {
-	// 啟動 Telegram 機器人
-	app.wg.Add(1)
-	go app.runWorker("TelegramBot", func() {
-		defer app.wg.Done()
-		app.telegramBot.StartWithContext(app.ctx)
-	})
+	// 啟動 API 服務器（如果啟用）
+	if app.apiServer != nil {
+		app.wg.Add(1)
+		go app.runWorker("APIServer", func() {
+			defer app.wg.Done()
+			if err := app.apiServer.Start(); err != nil {
+				log.Printf("API服務器啟動失敗: %v", err)
+			}
+		})
+	}
 
 	// 啟動每小時利率檢查
 	app.wg.Add(1)
@@ -169,6 +177,18 @@ func (app *Application) runWorker(name string, worker func()) {
 func (app *Application) shutdown() error {
 	log.Println("正在關閉應用程式...")
 
+	// 先關閉API服務器
+	if app.apiServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		
+		if err := app.apiServer.Stop(shutdownCtx); err != nil {
+			log.Printf("API服務器關閉失敗: %v", err)
+		} else {
+			log.Println("API服務器已關閉")
+		}
+	}
+
 	// 取消 context
 	app.cancel()
 
@@ -195,6 +215,7 @@ func (app *Application) scheduleMainTask() {
 	// 先執行第一次
 	app.executeMainTask()
 
+	log.Printf("[MAIN] 設置定時器間隔: %d 分鐘", app.config.MinutesRun)
 	ticker := time.NewTicker(time.Duration(app.config.MinutesRun) * time.Minute)
 	defer ticker.Stop()
 
@@ -213,6 +234,11 @@ func (app *Application) scheduleMainTask() {
 func (app *Application) executeMainTask() {
 	if err := app.lendingBot.Execute(); err != nil {
 		log.Printf("執行貸出策略失敗: %v", err)
+	}
+	
+	// 更新API處理器的狀態
+	if app.apiHandler != nil {
+		app.apiHandler.UpdateNextRun()
 	}
 }
 
@@ -261,30 +287,17 @@ func (app *Application) checkRateThreshold() {
 	if exceeded {
 		message := fmt.Sprintf("⚠️ 定時檢查提醒: 最近1小時最高利率 %.4f%% 已超過閾值 %.4f%%\n\n📊 檢查方式: 5分鐘K線最近12根高點分析",
 			percentageRate, app.config.NotifyRateThreshold)
-
-		if err := app.telegramBot.SendNotification(message); err != nil {
-			log.Printf("發送 Telegram 通知失敗: %v", err)
-		} else {
-			log.Printf("成功發送利率提醒")
+		
+		log.Printf("利率提醒: %s", message)
+		// 通過API處理器記錄日志或發送通知
+		if app.apiHandler != nil {
+			// TODO: 實現通知功能
 		}
 	} else {
 		log.Println("最近1小時最高利率低於閾值，無需發送通知")
 	}
 }
 
-// handleRestart 處理重啟請求
-func (app *Application) handleRestart() error {
-	log.Println("收到重啟請求，開始執行重啟邏輯...")
-
-	// 執行主要任務（這會取消所有訂單並重新下單）
-	if err := app.lendingBot.Execute(); err != nil {
-		log.Printf("重啟執行失敗: %v", err)
-		return fmt.Errorf("重啟執行失敗: %w", err)
-	}
-
-	log.Println("重啟完成！")
-	return nil
-}
 
 // scheduleLendingCheck 調度借貸訂單檢查
 func (app *Application) scheduleLendingCheck() {
