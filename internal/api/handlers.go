@@ -147,10 +147,34 @@ func (h *Handler) processEarningsData(ledgers []*bitfinex.LedgerEntry) EarningsD
 		
 		// 检查是否为资金放贷收益
 		desc := strings.ToLower(ledger.Description)
+		
+		// 首先排除明确不是收益的交易类型
+		isExcluded := strings.Contains(desc, "transfer") ||
+			strings.Contains(desc, "deposit") ||
+			strings.Contains(desc, "withdrawal") ||
+			strings.Contains(desc, "exchange") ||
+			strings.Contains(desc, "trading") ||
+			strings.Contains(desc, "fee") ||
+			strings.Contains(desc, "conversion") ||
+			strings.Contains(desc, "settle") ||
+			strings.Contains(desc, "liquidation") ||
+			strings.Contains(desc, "referral") ||
+			strings.Contains(desc, "affiliate")
+		
+		if isExcluded {
+			continue
+		}
+		
+		// 然后检查是否为资金放贷收益
 		isFundingEarning := strings.Contains(desc, "margin funding") || 
 			strings.Contains(desc, "funding payment") ||
+			strings.Contains(desc, "margin funding payment") ||
 			strings.Contains(desc, "lending") ||
-			strings.Contains(desc, "margin lending")
+			strings.Contains(desc, "margin lending") ||
+			strings.Contains(desc, "funding credit") ||
+			strings.Contains(desc, "margin interest") ||
+			// 可能的其他放贷收益描述
+			(strings.Contains(desc, "funding") && strings.Contains(desc, "earn"))
 		
 		if !isFundingEarning {
 			continue
@@ -172,6 +196,7 @@ func (h *Handler) processEarningsData(ledgers []*bitfinex.LedgerEntry) EarningsD
 			weeklyTotal += ledger.Amount
 		}
 	}
+	
 	
 	// 构建历史记录数组（按时间排序）
 	var history []EarningsHistory
