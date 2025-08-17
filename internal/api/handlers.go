@@ -291,17 +291,41 @@ func (h *Handler) GetActiveOffers(c *gin.Context) {
 func (h *Handler) GetConfig(c *gin.Context) {
 	// 返回安全的配置信息（隐藏敏感信息）
 	safeConfig := map[string]interface{}{
+		// 基本设置
 		"CURRENCY":           h.config.Currency,
-		"MINUTES_RUN":        h.config.MinutesRun,
 		"ORDER_LIMIT":        h.config.OrderLimit,
+		"MINUTES_RUN":        h.config.MinutesRun,
+		
+		// 贷出限制
 		"MIN_LOAN":           h.config.MinLoan,
 		"MAX_LOAN":           h.config.MaxLoan,
-		"MIN_DAILY_LEND_RATE": h.config.MinDailyLendRate,
-		"SPREAD_LEND":        h.config.SpreadLend,
-		"GAP_BOTTOM":         h.config.GapBottom,
-		"GAP_TOP":            h.config.GapTop,
+		
+		// 利率策略
+		"MIN_DAILY_LEND_RATE":              h.config.MinDailyLendRate,
+		"SPREAD_LEND":                      h.config.SpreadLend,
+		"GAP_BOTTOM":                       h.config.GapBottom,
+		"GAP_TOP":                          h.config.GapTop,
+		"THIRTY_DAY_LEND_RATE_THRESHOLD":   h.config.ThirtyDayLendRateThreshold,
+		"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD": h.config.OneTwentyDayLendRateThreshold,
+		"RATE_BONUS":                       h.config.RateBonus,
+		
+		// 高额持有策略
 		"HIGH_HOLD_RATE":     h.config.HighHoldRate,
 		"HIGH_HOLD_AMOUNT":   h.config.HighHoldAmount,
+		"HIGH_HOLD_ORDERS":   h.config.HighHoldOrders,
+		
+		// 通知设置
+		"NOTIFY_RATE_THRESHOLD": h.config.NotifyRateThreshold,
+		"RESERVE_AMOUNT":        h.config.ReserveAmount,
+		
+		// 智能策略设置
+		"ENABLE_SMART_STRATEGY":      h.config.EnableSmartStrategy,
+		"VOLATILITY_THRESHOLD":       h.config.VolatilityThreshold,
+		"MAX_RATE_MULTIPLIER":        h.config.MaxRateMultiplier,
+		"MIN_RATE_MULTIPLIER":        h.config.MinRateMultiplier,
+		"RATE_RANGE_INCREASE_PERCENT": h.config.RateRangeIncreasePercent,
+		
+		// 系统设置
 		"TEST_MODE":          h.config.TestMode,
 	}
 

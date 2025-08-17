@@ -291,13 +291,16 @@
                                 <label class="form-label">交易货币</label>
                                 <select class="form-select" name="CURRENCY">
                                     <option value="USD">USD</option>
-                                    <option value="BTC">BTC</option>
-                                    <option value="ETH">ETH</option>
+                                    <option value="UST">USDt</option>
                                 </select>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">运行间隔(分钟)</label>
                                 <input type="number" class="form-control" name="MINUTES_RUN" min="1" max="60">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">订单限制数量</label>
+                                <input type="number" class="form-control" name="ORDER_LIMIT" min="1" max="50" title="每次挂单只挂几笔，避免一次挂太多都成立，错过大利率">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">最小放贷金额</label>
@@ -316,12 +319,68 @@
                                 <input type="number" class="form-control" name="SPREAD_LEND" min="1">
                             </div>
                             <div class="col-md-6">
+                                <label class="form-label">深度范围下限</label>
+                                <input type="number" class="form-control" name="GAP_BOTTOM" min="1" title="ask挂单里面第几个index下限">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">深度范围上限</label>
+                                <input type="number" class="form-control" name="GAP_TOP" min="1" title="ask挂单里面第几个index上限">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">30天利率阈值(%)</label>
+                                <input type="number" class="form-control" name="THIRTY_DAY_LEND_RATE_THRESHOLD" step="0.001" min="0" title="超过此利率挂30天单">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">120天利率阈值(%)</label>
+                                <input type="number" class="form-control" name="ONE_TWENTY_DAY_LEND_RATE_THRESHOLD" step="0.001" min="0" title="超过此利率挂120天单">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">利率奖励(%)</label>
+                                <input type="number" class="form-control" name="RATE_BONUS" step="0.001" min="0" title="没有未成功订单时加利率">
+                            </div>
+                            <div class="col-md-6">
                                 <label class="form-label">高额持有利率(%)</label>
                                 <input type="number" class="form-control" name="HIGH_HOLD_RATE" step="0.001" min="0">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">高额持有金额</label>
                                 <input type="number" class="form-control" name="HIGH_HOLD_AMOUNT" step="0.01" min="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">高额持有订单数</label>
+                                <input type="number" class="form-control" name="HIGH_HOLD_ORDERS" min="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">通知利率阈值(%)</label>
+                                <input type="number" class="form-control" name="NOTIFY_RATE_THRESHOLD" step="0.001" min="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">预留金额</label>
+                                <input type="number" class="form-control" name="RESERVE_AMOUNT" step="0.01" min="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">波动率阈值</label>
+                                <input type="number" class="form-control" name="VOLATILITY_THRESHOLD" step="0.001" min="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">最大利率倍数</label>
+                                <input type="number" class="form-control" name="MAX_RATE_MULTIPLIER" step="0.1" min="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">最小利率倍数</label>
+                                <input type="number" class="form-control" name="MIN_RATE_MULTIPLIER" step="0.1" min="0.1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">利率范围增加百分比</label>
+                                <input type="number" class="form-control" name="RATE_RANGE_INCREASE_PERCENT" step="0.001" min="0">
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="ENABLE_SMART_STRATEGY" id="smart-strategy">
+                                    <label class="form-check-label" for="smart-strategy">
+                                        启用智能策略
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-12">
                                 <div class="form-check">
