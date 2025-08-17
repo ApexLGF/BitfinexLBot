@@ -49,12 +49,10 @@ class BitfinexBotApp {
 
     // 绑定事件
     bindEvents() {
-        // 手动刷新按钮
-        document.getElementById('refresh-btn')?.addEventListener('click', () => this.refreshAllData());
+        // 手动刷新按钮 (移动到机器人操作区域的新按钮)
+        document.getElementById('refresh-btn-robot')?.addEventListener('click', () => this.refreshAllData());
         
         // 机器人控制按钮
-        document.getElementById('start-btn')?.addEventListener('click', () => this.startBot());
-        document.getElementById('stop-btn')?.addEventListener('click', () => this.stopBot());
         document.getElementById('restart-btn')?.addEventListener('click', () => this.restartBot());
         
         // 配置管理
@@ -110,7 +108,7 @@ class BitfinexBotApp {
         }
 
         this.isRefreshing = true;
-        const refreshBtn = document.getElementById('refresh-btn');
+        const refreshBtn = document.getElementById('refresh-btn-robot');
         const refreshIcon = refreshBtn?.querySelector('i');
         
         try {
@@ -170,6 +168,20 @@ class BitfinexBotApp {
                 });
             }
             
+            // 获取钱包数据来计算总资金
+            let totalFunds = 0;
+            try {
+                const walletsResponse = await api.getWallets();
+                totalFunds = walletsResponse.data.total_balance || 0;
+            } catch (error) {
+                console.error('获取钱包数据失败:', error);
+                // 使用可用资金作为备选
+                totalFunds = status.available_funds || 0;
+            }
+            
+            // 添加总资金到状态对象
+            status.total_funds = totalFunds;
+            
             // 更新状态显示
             this.updateStatusDisplay(status);
             
@@ -190,10 +202,10 @@ class BitfinexBotApp {
             fundsElement.textContent = Utils.formatCurrency(status.available_funds, status.currency);
         }
         
-        // 活跃订单数
-        const offersElement = document.getElementById('active-offers');
-        if (offersElement) {
-            offersElement.textContent = status.active_offers;
+        // 总资金
+        const totalFundsElement = document.getElementById('active-offers');
+        if (totalFundsElement) {
+            totalFundsElement.textContent = Utils.formatCurrency(status.total_funds, status.currency);
         }
         
         // 总收益
@@ -224,12 +236,8 @@ class BitfinexBotApp {
 
     // 更新按钮状态
     updateButtonStates(isRunning) {
-        const startBtn = document.getElementById('start-btn');
-        const stopBtn = document.getElementById('stop-btn');
         const restartBtn = document.getElementById('restart-btn');
         
-        if (startBtn) startBtn.disabled = isRunning;
-        if (stopBtn) stopBtn.disabled = !isRunning;
         if (restartBtn) restartBtn.disabled = false;
     }
 
@@ -452,25 +460,6 @@ class BitfinexBotApp {
         return text.replace(/[&<>"']/g, function(m) { return map[m]; });
     }
 
-    // 启动机器人
-    async startBot() {
-        try {
-            const response = await api.start();
-            Utils.showNotification(response.message + ' - 请手动刷新查看最新状态', 'success');
-        } catch (error) {
-            Utils.showNotification('启动失败: ' + error.message, 'danger');
-        }
-    }
-
-    // 停止机器人
-    async stopBot() {
-        try {
-            const response = await api.stop();
-            Utils.showNotification(response.message + ' - 请手动刷新查看最新状态', 'warning');
-        } catch (error) {
-            Utils.showNotification('停止失败: ' + error.message, 'danger');
-        }
-    }
 
     // 重启机器人
     async restartBot() {

@@ -120,6 +120,11 @@ class BitfinexAPI {
         return this.get('/info');
     }
 
+    // 获取钱包信息
+    async getWallets() {
+        return this.get('/wallets');
+    }
+
     // 健康检查
     async healthCheck() {
         try {
@@ -142,14 +147,35 @@ class Utils {
             return '-';
         }
         
-        const formatter = new Intl.NumberFormat('zh-CN', {
-            style: 'currency',
-            currency: currency,
-            minimumFractionDigits: decimals,
-            maximumFractionDigits: decimals,
-        });
+        // 处理非标准货币代码
+        const currencyMap = {
+            'UST': 'USD',  // 将UST映射为USD进行格式化
+            'USDT': 'USD'  // 将USDT映射为USD进行格式化
+        };
         
-        return formatter.format(amount);
+        const mappedCurrency = currencyMap[currency] || currency;
+        
+        try {
+            const formatter = new Intl.NumberFormat('zh-CN', {
+                style: 'currency',
+                currency: mappedCurrency,
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals,
+            });
+            
+            let formatted = formatter.format(amount);
+            
+            // 如果是非标准货币，替换显示的货币符号
+            if (currencyMap[currency]) {
+                formatted = formatted.replace(/USD|US\$|\$/, currency);
+            }
+            
+            return formatted;
+        } catch (error) {
+            // 如果格式化失败，使用简单格式
+            console.warn('货币格式化失败:', error);
+            return `${amount.toFixed(decimals)} ${currency}`;
+        }
     }
 
     // 格式化百分比

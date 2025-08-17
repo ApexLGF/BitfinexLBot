@@ -599,6 +599,50 @@ func (h *Handler) GetFundingCredits(c *gin.Context) {
 	})
 }
 
+// GetWallets 获取钱包信息
+func (h *Handler) GetWallets(c *gin.Context) {
+	wallets, err := h.client.GetWallets()
+	if err != nil {
+		log.Printf("[API] GetWallets 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "获取钱包信息失败: " + err.Error(),
+		})
+		return
+	}
+	
+	// 计算指定货币的总资金
+	var totalBalance float64
+	var availableBalance float64
+	var walletData []map[string]interface{}
+	
+	for _, wallet := range wallets {
+		if wallet.Currency == h.config.Currency {
+			totalBalance += wallet.Balance
+			availableBalance += wallet.Available
+		}
+		
+		walletData = append(walletData, map[string]interface{}{
+			"currency":  wallet.Currency,
+			"type":      wallet.Type,
+			"balance":   wallet.Balance,
+			"available": wallet.Available,
+		})
+	}
+	
+	response := map[string]interface{}{
+		"wallets":           walletData,
+		"total_balance":     totalBalance,
+		"available_balance": availableBalance,
+		"currency":          h.config.Currency,
+	}
+	
+	c.JSON(http.StatusOK, APIResponse{
+		Success: true,
+		Data:    response,
+	})
+}
+
 // GetSystemInfo 获取系统信息
 func (h *Handler) GetSystemInfo(c *gin.Context) {
 	info := map[string]interface{}{

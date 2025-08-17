@@ -63,6 +63,9 @@ func (s *Server) setupRoutes() {
 		// 已贷出订单
 		api.GET("/credits", s.handler.GetFundingCredits)
 		
+		// 钱包信息
+		api.GET("/wallets", s.handler.GetWallets)
+		
 		// 配置管理
 		api.GET("/config", s.handler.GetConfig)
 		api.POST("/config", s.handler.UpdateConfig)
