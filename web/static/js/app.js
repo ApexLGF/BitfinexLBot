@@ -463,11 +463,34 @@ class BitfinexBotApp {
 
     // 重启机器人
     async restartBot() {
+        const restartBtn = document.getElementById('restart-btn');
+        const restartIcon = restartBtn?.querySelector('i');
+        
         try {
+            // 更新按钮状态
+            if (restartBtn) restartBtn.disabled = true;
+            if (restartIcon) {
+                restartIcon.style.animation = 'spin 1s linear infinite';
+            }
+            
+            Utils.showNotification('正在重启机器人，重新加载配置...', 'info', 2000);
+            
             const response = await api.restart();
-            Utils.showNotification(response.message + ' - 请手动刷新查看最新状态', 'info');
+            Utils.showNotification(response.message, 'success', 5000);
+            
+            // 重启成功后自动刷新所有数据
+            setTimeout(() => {
+                this.refreshAllData();
+            }, 1000);
+            
         } catch (error) {
-            Utils.showNotification('重启失败: ' + error.message, 'danger');
+            Utils.showNotification('重启失败: ' + error.message, 'danger', 8000);
+        } finally {
+            // 恢复按钮状态
+            if (restartBtn) restartBtn.disabled = false;
+            if (restartIcon) {
+                restartIcon.style.animation = '';
+            }
         }
     }
 

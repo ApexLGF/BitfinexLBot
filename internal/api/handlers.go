@@ -436,20 +436,17 @@ func (h *Handler) Control(c *gin.Context) {
 			Message: "机器人已停止",
 		})
 	case "restart":
-		h.isRunning = true
-		h.lastUpdate = time.Now()
-		h.nextRun = time.Now().Add(time.Duration(h.config.MinutesRun) * time.Minute)
-		// TODO: 实际重启机器人逻辑（执行一次策略）
-		if err := h.strategy.Execute(); err != nil {
+		// 实际重启机器人逻辑
+		if err := h.restartBot(); err != nil {
 			c.JSON(http.StatusInternalServerError, APIResponse{
 				Success: false,
-				Error:   "重启执行失败: " + err.Error(),
+				Error:   "重启失败: " + err.Error(),
 			})
 			return
 		}
 		c.JSON(http.StatusOK, APIResponse{
 			Success: true,
-			Message: "机器人已重启",
+			Message: "机器人重启成功，配置已重新加载",
 		})
 	default:
 		c.JSON(http.StatusBadRequest, APIResponse{
@@ -702,4 +699,80 @@ func (h *Handler) SetRunning(running bool) {
 func (h *Handler) UpdateNextRun() {
 	h.lastUpdate = time.Now()
 	h.nextRun = time.Now().Add(time.Duration(h.config.MinutesRun) * time.Minute)
+}
+
+// restartBot 重启机器人 - 重新加载配置并重新初始化所有组件
+func (h *Handler) restartBot() error {
+	log.Printf("[API] 开始重启机器人...")
+	
+	// 1. 重新加载配置文件
+	log.Printf("[API] 重新加载配置文件: %s", h.configPath)
+	newConfig, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		log.Printf("[API] 重新加载配置失败: %v", err)
+		return fmt.Errorf("重新加载配置失败: %w", err)
+	}
+	
+	// 2. 检查关键配置是否发生变化
+	configChanged := h.hasConfigChanged(h.config, newConfig)
+	if configChanged {
+		log.Printf("[API] 检测到配置变化，重新初始化客户端和策略")
+	}
+	
+	// 3. 更新配置引用
+	oldConfig := h.config
+	h.config = newConfig
+	
+	// 4. 如果API密钥或其他关键配置变化，重新初始化客户端
+	if configChanged {
+		log.Printf("[API] 重新初始化Bitfinex客户端")
+		h.client = bitfinex.NewClient(newConfig.BitfinexApiKey, newConfig.BitfinexSecretKey)
+		
+		// 5. 重新创建策略实例
+		log.Printf("[API] 重新创建放贷策略实例")
+		h.strategy = strategy.NewLendingBot(newConfig, h.client)
+	} else {
+		log.Printf("[API] 配置未发生关键变化，仅更新策略配置")
+		// 如果只是普通配置变化，更新策略中的配置引用
+		if err := h.strategy.UpdateConfig(newConfig); err != nil {
+			log.Printf("[API] 更新策略配置失败: %v", err)
+			// 配置更新失败时回滚
+			h.config = oldConfig
+			return fmt.Errorf("更新策略配置失败: %w", err)
+		}
+	}
+	
+	// 6. 执行一次策略以验证新配置
+	log.Printf("[API] 执行一次策略验证新配置")
+	if err := h.strategy.Execute(); err != nil {
+		log.Printf("[API] 策略执行失败: %v", err)
+		// 执行失败时回滚配置
+		h.config = oldConfig
+		return fmt.Errorf("策略执行失败: %w", err)
+	}
+	
+	// 7. 更新运行状态
+	h.isRunning = true
+	h.lastUpdate = time.Now()
+	h.nextRun = time.Now().Add(time.Duration(newConfig.MinutesRun) * time.Minute)
+	
+	log.Printf("[API] 机器人重启成功")
+	return nil
+}
+
+// hasConfigChanged 检查配置是否发生关键变化
+func (h *Handler) hasConfigChanged(oldConfig, newConfig *config.Config) bool {
+	// 检查需要重新初始化客户端的关键配置
+	if oldConfig.BitfinexApiKey != newConfig.BitfinexApiKey {
+		return true
+	}
+	if oldConfig.BitfinexSecretKey != newConfig.BitfinexSecretKey {
+		return true
+	}
+	if oldConfig.Currency != newConfig.Currency {
+		return true
+	}
+	
+	// 其他配置变化不需要重新初始化客户端，但需要更新策略
+	return false
 }

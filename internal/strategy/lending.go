@@ -32,6 +32,20 @@ func NewLendingBot(cfg *config.Config, client *bitfinex.Client) *LendingBot {
 	}
 }
 
+// UpdateConfig 更新配置 - 用于热重载配置
+func (lb *LendingBot) UpdateConfig(newConfig *config.Config) error {
+	log.Printf("[Strategy] 更新配置...")
+	
+	// 更新主配置
+	lb.config = newConfig
+	
+	// 重新初始化智能策略（如果配置变化）
+	lb.smartStrategy = NewSmartStrategy(newConfig)
+	
+	log.Printf("[Strategy] 配置更新完成")
+	return nil
+}
+
 // LoanOffer 代表一個貸出訂單
 type LoanOffer struct {
 	Amount float64
