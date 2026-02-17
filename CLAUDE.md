@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 这是一个用 Go 语言编写的 Bitfinex 放贷机器人，用于自动化保证金放贷策略。该机器人：
 - 监控放贷利率并自动下达优化的放贷订单
 - 实现复杂的多层放贷策略，支持动态利率调整
-- 提供 Telegram 机器人集成，实现实时监控和配置
+- 提供 Web 界面和 REST API，实现实时监控和配置管理
 - 支持大额资金的高利率持有策略
 - 包含基于利率的期间选择功能（2天、30天、120天贷款）
+- Docker 一体化部署，包含 Nginx + Go 应用 + Supervisor
 
 ## 系统架构
 
@@ -19,10 +20,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/config`: 使用 Viper 的配置管理（YAML 配置 + 环境变量）
 - `internal/strategy`: 放贷策略实现和市场分析
 - `internal/bitfinex`: Bitfinex API v2 REST 客户端封装
-- `internal/api`: Web API 服务器和处理器（替代原 Telegram Bot）
+- `internal/api`: Web API 服务器和处理器（REST API + 配置管理）
 - `internal/rates`: 利率计算和转换工具
 - `internal/constants`: 应用常量和枚举
 - `internal/errors`: 统一错误处理
+
+**Web 界面架构**:
+- `web/index.html`: 响应式 Web 控制台主页面
+- `web/static/`: 静态资源（CSS、JS、图片）
+- Nginx 反向代理（端口 8089）到 Go API 服务（端口 8090）
+- Supervisor 进程管理，确保服务稳定运行
 
 **关键算法**:
 - `strategy.LendingBot`: 核心策略引擎，计算最优放贷订单
@@ -63,10 +70,17 @@ go vet ./...                      # 静态分析
 **Docker 和 Web 界面**:
 ```bash
 make docker-build                 # 构建 Docker 镜像
+make build-linux                  # 构建 Linux 可执行文件
 docker compose up -d              # 启动 Web 服务（推荐）
 docker compose down               # 停止 Web 服务
 docker compose up -d --build      # 重新构建并启动
+docker compose logs -f            # 查看实时日志
+docker pull apexlgf/bitfinexwebbot:latest  # 拉取官方镜像
 ```
+
+**Web 界面访问**:
+- 启动后访问: http://localhost:8089
+- 功能包括：状态监控、收益统计、订单管理、配置编辑、实时日志
 
 **其他工具**:
 ```bash
@@ -88,6 +102,9 @@ make release                      # 构建发布包
 - `GAP_BOTTOM` / `GAP_TOP`: 利率计算的市场深度范围
 - `HIGH_HOLD_*`: 大额资金的高级放贷策略
 - `TEST_MODE`: 测试模式开关（true=不执行真实交易）
+- `API_ENABLED`: 启用 Web API 和界面（默认 true）
+- `API_PORT`: API 服务端口（默认 8090，Nginx 代理到 8089）
+- `API_HOST`: API 绑定地址（容器内使用 127.0.0.1）
 
 ## 项目结构
 
@@ -98,14 +115,19 @@ BitfinexLendingBot/
 ├── Makefile                  # 构建和开发命令
 ├── test.sh                   # 测试运行脚本
 ├── go.mod                    # Go 模块依赖
+├── docker-compose.yml        # Docker Compose 配置
+├── Dockerfile                # Docker 镜像构建文件
+├── web/                      # Web 界面静态文件
+│   ├── index.html           # 主页面
+│   └── static/              # CSS、JS、图片资源
 └── internal/                 # 内部包
+    ├── api/                 # Web API 服务器和处理器
     ├── bitfinex/            # Bitfinex API 客户端
     ├── config/              # 配置管理
     ├── constants/           # 应用常量
     ├── errors/              # 错误定义
     ├── rates/               # 利率转换工具
-    ├── strategy/            # 放贷策略
-    └── telegram/            # Telegram 机器人集成
+    └── strategy/            # 放贷策略
 ```
 
 ## 关键模块参考
@@ -126,12 +148,14 @@ BitfinexLendingBot/
 - `bitfinex.CancelAllOffers()` - 取消所有资金订单
 - `bitfinex.GetAvailableFunds()` - 获取钱包余额
 - `bitfinex.GetLendingRate()` - 获取当前资金利率
+- `bitfinex.GetFundingCandles()` - 获取历史 K 线数据
 
-**Telegram 机器人**:
-- `telegram.Bot` - Telegram 机器人接口
-- `telegram.HandleMessage()` - 处理传入消息
-- `telegram.SendNotification()` - 发送通知
-- 通过聊天命令进行动态配置更新
+**Web API 服务**:
+- `api.Server` - HTTP 服务器，处理 Web 请求
+- `api.Handler` - API 请求处理器，提供状态、配置、订单等接口
+- REST API 端点：`/api/status`, `/api/earnings`, `/api/offers`, `/api/config`, `/api/control`, `/api/logs`
+- 健康检查端点：`/health`
+- 支持配置热重载和机器人控制（启动/停止/重启）
 
 **配置和工具**:
 - `config.LoadConfig()` - 加载和验证配置
@@ -171,19 +195,35 @@ go tool cover -html=coverage.out -o coverage.html
 
 - 使用 `make dev` 进行开发，启用测试模式
 - 提交更改前使用 `make test`
-- 配置更改可以通过 Telegram 机器人实时进行
+- 配置更改可以通过 Web 界面实时进行，支持热重载
 - 运行测试后检查 `coverage.html` 进行覆盖率分析
 - 使用 `make security-check` 验证提交中无敏感数据
 - 原始单文件版本保存为 `backup/main_original.go`
+- Docker 镜像已发布到 Docker Hub: `apexlgf/bitfinexwebbot:latest`
+
+## 应用程序架构
+
+**并发模型**:
+- 主应用程序使用 `context.Context` 和 `sync.WaitGroup` 管理多个 goroutine
+- 三个独立调度器：主任务（`MINUTES_RUN`）、借贷检查（`LENDING_CHECK_MINUTES`）、利率监控（每小时）
+- 支持优雅关闭，所有 goroutine 响应停止信号
+- API 服务器独立运行，通过 context 控制生命周期
+
+**调度器说明**:
+1. **主任务调度器** (`scheduleMainTask`): 执行放贷策略、下单、取消订单
+2. **借贷检查调度器** (`scheduleLendingCheck`): 检查新借贷成交，记录收益
+3. **利率监控调度器** (`scheduleHourlyRateCheck`): 每小时检查利率阈值，发送提醒
 
 ## 安全注意事项
 
 - API 凭证存储在 config.yaml 中（确保此文件不被提交到版本控制）
-- Telegram 机器人令牌在 config.yaml 中
-- Telegram 访问使用单一聊天 ID 认证
+- Web API 支持可选的认证令牌（`API_AUTH_TOKEN`）
+- Docker 容器内配置文件建议使用只读挂载（`:ro`）或读写挂载（`:rw`）根据需求
 - `make security-check` 验证提交中无敏感信息
 - 配置验证防止无效/危险设置
 - 测试模式（`TEST_MODE: true`）防止真实交易操作
+- 生产环境建议使用 HTTPS 和反向代理
+- Web 界面端口（8089）建议配置防火墙规则限制访问
 
 ##两种核心放贷策略的解释
 CalculateSmartOffers (智能策略)
@@ -268,3 +308,39 @@ K线策略：
 - calculateKlineOffers 是一个简洁的技术分析策略，适合基于历史趋势进行决策的场景
 
 两种策略可以根据不同的市场环境和用户偏好进行选择，智能策略更适合复杂多变的市场，K线策略更适合趋势明确的市场环境。
+
+## Web 界面和 Docker 部署
+
+**Web 界面功能**:
+- **控制台面板**: 实时显示机器人状态、可用资金、活跃订单
+- **收益监控**: 日、周、月收益统计和可视化图表
+- **订单管理**: 查看活跃放贷订单和已贷出订单详情
+- **配置管理**: 在线编辑配置文件，支持热重载
+- **系统监控**: 实时日志显示和系统健康状态
+
+**Docker 架构**:
+- **单容器多服务**: Nginx (8089) + Go 应用 (8090) + Supervisor
+- **Nginx**: 提供静态文件服务和 API 反向代理
+- **Supervisor**: 进程管理，自动重启异常服务
+- **数据持久化**: 配置文件和日志通过 volume 挂载
+
+**快速部署**:
+```bash
+# 使用官方镜像
+docker pull apexlgf/bitfinexwebbot:latest
+docker run -d --name bitfinex-bot -p 8089:8089 \
+  -v $(pwd)/config.yaml:/app/config.yaml:rw \
+  apexlgf/bitfinexwebbot:latest
+
+# 或使用 Docker Compose
+docker compose up -d
+```
+
+**端口说明**:
+- 8089: 对外 Web 访问端口（Nginx）
+- 8090: 内部 API 服务端口（Go 应用，通过 Nginx 代理）
+
+**相关文档**:
+- [README-WEB.md](README-WEB.md) - Web 版本详细使用指南
+- [DOCKER_USAGE.md](DOCKER_USAGE.md) - Docker 镜像使用说明
+- [DEPLOYMENT.md](DEPLOYMENT.md) - 部署指南

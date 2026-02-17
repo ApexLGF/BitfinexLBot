@@ -1,7 +1,8 @@
 # Binaries for programs and plugins
 BitfinexLendingBot
-
+BitfinexLBot
 bitfinex-lending-bot
+bitfinex-bot
 *.exe
 *.exe~
 *.dll
@@ -51,6 +52,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+*.bak
 
 build/coverage.html
 coverage.html
