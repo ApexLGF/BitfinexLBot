@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BitfinexBot 控制台</title>
-    
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -20,7 +20,7 @@
             <a class="navbar-brand" href="#">
                 <i class="bi bi-robot me-2"></i>BitfinexBot 控制台
             </a>
-            
+
             <div class="navbar-nav ms-auto">
                 <div class="nav-item">
                     <span class="navbar-text" id="status-indicator">
@@ -34,217 +34,57 @@
 
     <div class="container-fluid mt-3">
         <div class="row">
-            <!-- 控制面板 -->
-            <div class="col-lg-8">
-                <!-- 机器人状态卡片 -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-speedometer2 me-2"></i>机器人状态
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="text-center">
-                                    <div class="fs-1 mb-2">
-                                        <i class="bi bi-robot" id="robot-icon"></i>
-                                    </div>
-                                    <div class="btn-group" role="group">
-                                        <button type="button" class="btn btn-info" id="restart-btn" title="重启机器人：重新加载配置文件并重新初始化所有组件">
-                                            <i class="bi bi-arrow-clockwise"></i> 重启机器人
-                                        </button>
-                                        <button type="button" class="btn btn-outline-primary btn-sm ms-2" id="refresh-btn-robot" title="刷新所有数据">
-                                            <i class="bi bi-arrow-clockwise me-1"></i>刷新数据
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-9">
-                                <div class="row g-3">
-                                    <div class="col-sm-6 col-md-3">
-                                        <div class="card border-0 bg-light">
-                                            <div class="card-body text-center">
-                                                <i class="bi bi-wallet2 text-success fs-4"></i>
-                                                <div class="mt-1">
-                                                    <div class="fw-bold" id="available-funds">-</div>
-                                                    <small class="text-muted">可用资金</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-6 col-md-3">
-                                        <div class="card border-0 bg-light">
-                                            <div class="card-body text-center">
-                                                <i class="bi bi-list-ul text-primary fs-4"></i>
-                                                <div class="mt-1">
-                                                    <div class="fw-bold" id="active-offers">-</div>
-                                                    <small class="text-muted">总资金</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-6 col-md-3">
-                                        <div class="card border-0 bg-light">
-                                            <div class="card-body text-center">
-                                                <i class="bi bi-graph-up text-info fs-4"></i>
-                                                <div class="mt-1">
-                                                    <div class="fw-bold" id="total-earnings">-</div>
-                                                    <small class="text-muted">总收益</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-6 col-md-3">
-                                        <div class="card border-0 bg-light">
-                                            <div class="card-body text-center">
-                                                <i class="bi bi-clock text-warning fs-4"></i>
-                                                <div class="mt-1">
-                                                    <div class="fw-bold" id="next-run">-</div>
-                                                    <small class="text-muted">下次运行</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <!-- 左侧面板 (70%) -->
+            <div class="col-lg-8 col-xl-9">
+                <!-- 币种 TAB 导航 -->
+                <ul class="nav nav-tabs currency-tabs mb-3" id="currency-tabs" role="tablist">
+                    <!-- TAB 将通过 JavaScript 动态生成 -->
+                </ul>
 
-                <!-- 收益图表 -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-graph-up me-2"></i>收益趋势
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="earnings-chart" height="300"></canvas>
-                    </div>
-                </div>
-
-                <!-- 贷出挂单列表 -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-list-ul me-2"></i>贷出挂单列表
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover" id="offers-table">
-                                <thead>
-                                    <tr>
-                                        <th>订单ID</th>
-                                        <th>金额</th>
-                                        <th>利率</th>
-                                        <th>期限</th>
-                                        <th>状态</th>
-                                        <th>创建时间</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td colspan="6" class="text-center text-muted">正在加载...</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 已贷出订单列表 -->
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-check-circle me-2"></i>已贷出订单列表
-                        </h5>
-                        <div class="d-flex gap-3">
-                            <span class="badge bg-primary">
-                                <i class="bi bi-hash me-1"></i>数量: <span id="credits-count">-</span>
-                            </span>
-                            <span class="badge bg-success">
-                                <i class="bi bi-currency-dollar me-1"></i>总额: <span id="credits-total">-</span>
-                            </span>
-                            <span class="badge bg-info">
-                                <i class="bi bi-percent me-1"></i>平均利率: <span id="credits-avg-rate">-</span>%
-                            </span>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover" id="credits-table">
-                                <thead>
-                                    <tr>
-                                        <th>订单ID</th>
-                                        <th>金额</th>
-                                        <th>利率</th>
-                                        <th>期限</th>
-                                        <th>状态</th>
-                                        <th>创建时间</th>
-                                        <th>生效时间</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td colspan="7" class="text-center text-muted">正在加载...</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <!-- TAB 内容区域 -->
+                <div class="tab-content" id="currency-tab-content">
+                    <!-- 每个币种的内容将通过 JavaScript 动态生成 -->
                 </div>
             </div>
 
-            <!-- 侧边栏 -->
-            <div class="col-lg-4">
-                <!-- 快速统计 -->
-                <div class="card mb-4">
+            <!-- 右侧面板 (30%) -->
+            <div class="col-lg-4 col-xl-3">
+                <!-- 整体放贷信息 -->
+                <div class="card mb-3">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-bar-chart me-2"></i>收益统计
-                        </h5>
+                        <i class="bi bi-graph-up me-2"></i>整体放贷信息
                     </div>
                     <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <div class="d-flex justify-content-between">
-                                    <span>昨日收益</span>
-                                    <span class="fw-bold text-success" id="daily-earnings">-</span>
-                                </div>
-                                <hr>
+                        <h6 class="card-subtitle mb-2 text-muted">当前 FRR 利率</h6>
+                        <div id="frr-rates-container" class="mb-3">
+                            <div class="text-center text-muted py-2">
+                                <span class="spinner-border spinner-border-sm me-2"></span>加载中...
                             </div>
-                            <div class="col-12">
-                                <div class="d-flex justify-content-between">
-                                    <span>7日收益</span>
-                                    <span class="fw-bold text-info" id="weekly-earnings">-</span>
-                                </div>
-                                <hr>
-                            </div>
-                            <div class="col-12">
-                                <div class="d-flex justify-content-between">
-                                    <span>30日收益</span>
-                                    <span class="fw-bold text-primary" id="monthly-earnings">-</span>
-                                </div>
+                        </div>
+
+                        <hr>
+
+                        <h6 class="card-subtitle mb-2 text-muted">365日累计收益</h6>
+                        <div id="yearly-earnings-container">
+                            <div class="text-center text-muted py-2">
+                                <span class="spinner-border spinner-border-sm me-2"></span>加载中...
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 配置管理 -->
-                <div class="card mb-4">
+                <div class="card mb-3">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-gear me-2"></i>配置管理
-                        </h5>
+                        <i class="bi bi-gear me-2"></i>配置管理
                     </div>
                     <div class="card-body">
-                        <button class="btn btn-outline-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#config-modal">
-                            <i class="bi bi-pencil-square me-2"></i>编辑配置
-                        </button>
-                        <button class="btn btn-outline-secondary w-100" id="refresh-config">
-                            <i class="bi bi-arrow-clockwise me-2"></i>刷新配置
+                        <!-- 币种最小利率显示 -->
+                        <div id="min-rates-container" class="mb-3">
+                            <!-- 将通过 JavaScript 动态生成 -->
+                        </div>
+                        <button class="btn btn-outline-secondary w-100" data-bs-toggle="modal" data-bs-target="#config-modal">
+                            <i class="bi bi-pencil-square me-1"></i>编辑配置
                         </button>
                     </div>
                 </div>
@@ -252,13 +92,11 @@
                 <!-- 系统日志 -->
                 <div class="card">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-terminal me-2"></i>系统日志
-                        </h5>
+                        <i class="bi bi-terminal me-2"></i>系统日志
                     </div>
                     <div class="card-body p-0">
-                        <div id="log-container" style="height: 450px; overflow-y: auto; font-family: monospace; font-size: 0.875rem;">
-                            <div class="p-3 text-muted">正在加载日志...</div>
+                        <div id="log-container" class="log-terminal">
+                            <!-- 日志内容将通过 JavaScript 动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -268,7 +106,7 @@
 
     <!-- 配置编辑模态框 -->
     <div class="modal fade" id="config-modal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -278,116 +116,14 @@
                 </div>
                 <div class="modal-body">
                     <form id="config-form">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">交易货币</label>
-                                <select class="form-select" name="CURRENCY">
-                                    <option value="USD">USD</option>
-                                    <option value="UST">USDt</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">运行间隔(分钟)</label>
-                                <input type="number" class="form-control" name="MINUTES_RUN" min="1" max="60">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">订单限制数量</label>
-                                <input type="number" class="form-control" name="ORDER_LIMIT" min="1" max="50" title="每次挂单只挂几笔，避免一次挂太多都成立，错过大利率">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">最小放贷金额</label>
-                                <input type="number" class="form-control" name="MIN_LOAN" step="0.01" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">最大放贷金额</label>
-                                <input type="number" class="form-control" name="MAX_LOAN" step="0.01" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">最小日利率(%)</label>
-                                <input type="number" class="form-control" name="MIN_DAILY_LEND_RATE" step="0.001" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">资金分散数</label>
-                                <input type="number" class="form-control" name="SPREAD_LEND" min="1">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">深度范围下限</label>
-                                <input type="number" class="form-control" name="GAP_BOTTOM" min="1" title="ask挂单里面第几个index下限">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">深度范围上限</label>
-                                <input type="number" class="form-control" name="GAP_TOP" min="1" title="ask挂单里面第几个index上限">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">30天利率阈值(%)</label>
-                                <input type="number" class="form-control" name="THIRTY_DAY_LEND_RATE_THRESHOLD" step="0.001" min="0" title="超过此利率挂30天单">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">120天利率阈值(%)</label>
-                                <input type="number" class="form-control" name="ONE_TWENTY_DAY_LEND_RATE_THRESHOLD" step="0.001" min="0" title="超过此利率挂120天单">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">利率奖励(%)</label>
-                                <input type="number" class="form-control" name="RATE_BONUS" step="0.001" min="0" title="没有未成功订单时加利率">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">高额持有利率(%)</label>
-                                <input type="number" class="form-control" name="HIGH_HOLD_RATE" step="0.001" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">高额持有金额</label>
-                                <input type="number" class="form-control" name="HIGH_HOLD_AMOUNT" step="0.01" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">高额持有订单数</label>
-                                <input type="number" class="form-control" name="HIGH_HOLD_ORDERS" min="1">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">通知利率阈值(%)</label>
-                                <input type="number" class="form-control" name="NOTIFY_RATE_THRESHOLD" step="0.001" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">预留金额</label>
-                                <input type="number" class="form-control" name="RESERVE_AMOUNT" step="0.01" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">波动率阈值</label>
-                                <input type="number" class="form-control" name="VOLATILITY_THRESHOLD" step="0.001" min="0">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">最大利率倍数</label>
-                                <input type="number" class="form-control" name="MAX_RATE_MULTIPLIER" step="0.1" min="1">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">最小利率倍数</label>
-                                <input type="number" class="form-control" name="MIN_RATE_MULTIPLIER" step="0.1" min="0.1">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">利率范围增加百分比</label>
-                                <input type="number" class="form-control" name="RATE_RANGE_INCREASE_PERCENT" step="0.001" min="0">
-                            </div>
-                            <div class="col-12">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="ENABLE_SMART_STRATEGY" id="smart-strategy">
-                                    <label class="form-check-label" for="smart-strategy">
-                                        启用智能策略
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-12">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="TEST_MODE" id="test-mode">
-                                    <label class="form-check-label" for="test-mode">
-                                        测试模式 (不执行真实交易)
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                        <!-- 配置表单将通过 JavaScript 动态生成 -->
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="save-config">保存配置</button>
+                    <button type="button" class="btn btn-primary" id="save-config">
+                        <i class="bi bi-save me-1"></i>保存配置
+                    </button>
                 </div>
             </div>
         </div>
@@ -395,9 +131,14 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- 自定义脚本 -->
-    <script src="static/js/api.js?v=10"></script>
-    <script src="static/js/charts.js?v=10"></script>
-    <script src="static/js/app.js?v=10"></script>
+
+    <!-- 应用脚本 -->
+    <script src="static/js/api.js"></script>
+    <script src="static/js/charts.js"></script>
+    <script src="static/js/tabs.js"></script>
+    <script src="static/js/dashboard.js"></script>
+    <script src="static/js/overall-info.js"></script>
+    <script src="static/js/config-manager.js"></script>
+    <script src="static/js/app.js"></script>
 </body>
 </html>

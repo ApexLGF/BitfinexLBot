@@ -16,6 +16,8 @@ import (
 // LendingBot 貸出機器人
 type LendingBot struct {
 	config         *config.Config
+	currencyConfig *config.CurrencyConfig
+	currency       string // 當前管理的幣種
 	client         *bitfinex.Client
 	rateConverter  *rates.Converter
 	smartStrategy  *SmartStrategy
@@ -23,27 +25,44 @@ type LendingBot struct {
 }
 
 // NewLendingBot 創建新的貸出機器人
-func NewLendingBot(cfg *config.Config, client *bitfinex.Client) *LendingBot {
+func NewLendingBot(cfg *config.Config, currencyConfig *config.CurrencyConfig, currency string, client *bitfinex.Client) *LendingBot {
 	return &LendingBot{
-		config:        cfg,
-		client:        client,
-		rateConverter: rates.NewConverter(),
-		smartStrategy: NewSmartStrategy(cfg),
+		config:         cfg,
+		currencyConfig: currencyConfig,
+		currency:       strings.ToUpper(currency),
+		client:         client,
+		rateConverter:  rates.NewConverter(),
+		smartStrategy:  NewSmartStrategy(cfg, currencyConfig),
 	}
 }
 
 // UpdateConfig 更新配置 - 用于热重载配置
 func (lb *LendingBot) UpdateConfig(newConfig *config.Config) error {
 	log.Printf("[Strategy] 更新配置...")
-	
+
 	// 更新主配置
 	lb.config = newConfig
-	
+
+	// 更新币种配置
+	if currencyConfig, ok := newConfig.Currencies[strings.ToLower(lb.currency)]; ok {
+		lb.currencyConfig = currencyConfig
+	}
+
 	// 重新初始化智能策略（如果配置变化）
-	lb.smartStrategy = NewSmartStrategy(newConfig)
-	
+	lb.smartStrategy = NewSmartStrategy(newConfig, lb.currencyConfig)
+
 	log.Printf("[Strategy] 配置更新完成")
 	return nil
+}
+
+// GetFundingSymbol 獲取當前幣種的 funding symbol
+func (lb *LendingBot) GetFundingSymbol() string {
+	return constants.FundingSymbolPrefix + lb.currency
+}
+
+// GetMinDailyRateDecimal 獲取當前幣種的最小日利率（小數格式）
+func (lb *LendingBot) GetMinDailyRateDecimal() float64 {
+	return lb.currencyConfig.MinDailyLendRate / 100.0
 }
 
 // LoanOffer 代表一個貸出訂單
@@ -75,22 +94,22 @@ func (lb *LendingBot) Execute() error {
 		log.Printf("取得餘額錯誤: %v", err)
 		return err
 	}
-	log.Printf("Currency: %s  Available: %f", lb.config.Currency, fundsAvailable)
+	log.Printf("Currency: %s  Available: %f", lb.currency, fundsAvailable)
 
 	// 扣除保留金額
-	if lb.config.ReserveAmount > 0 {
-		fundsAvailable = math.Max(0, fundsAvailable-lb.config.ReserveAmount)
+	if lb.currencyConfig.ReserveAmount > 0 {
+		fundsAvailable = math.Max(0, fundsAvailable-lb.currencyConfig.ReserveAmount)
 		log.Printf("扣除保留金額後可用: %f", fundsAvailable)
 	}
 
 	// 檢查可用資金
-	if fundsAvailable < lb.config.MinLoan {
+	if fundsAvailable < lb.currencyConfig.MinLoan {
 		log.Println("可用資金小於最小貸出額，不進行操作")
 		return nil
 	}
 
 	// 獲取市場數據
-	fundingBook, err := lb.client.GetFundingBook(lb.config.GetFundingSymbol(), constants.MaxPriceLevels)
+	fundingBook, err := lb.client.GetFundingBook(lb.GetFundingSymbol(), constants.MaxPriceLevels)
 	if err != nil {
 		log.Printf("取得 Funding Book 錯誤: %v", err)
 		log.Println("使用fallback模式，僅使用最小利率策略")
@@ -117,7 +136,7 @@ func (lb *LendingBot) Execute() error {
 
 // cancelAllOffers 取消所有未完成訂單
 func (lb *LendingBot) cancelAllOffers() (bool, error) {
-	offers, err := lb.client.GetFundingOffers(lb.config.GetFundingSymbol())
+	offers, err := lb.client.GetFundingOffers(lb.GetFundingSymbol())
 	if err != nil {
 		return false, err
 	}
@@ -140,7 +159,7 @@ func (lb *LendingBot) cancelAllOffers() (bool, error) {
 
 // getAvailableFunds 獲取可用資金
 func (lb *LendingBot) getAvailableFunds() (float64, error) {
-	return lb.client.GetFundingBalance(strings.ToUpper(lb.config.Currency))
+	return lb.client.GetFundingBalance(lb.currency)
 }
 
 // calculateLoanOffers 計算貸出訂單
@@ -148,20 +167,20 @@ func (lb *LendingBot) calculateLoanOffers(fundsAvailable float64, fundingBook []
 	var loanOffers []*LoanOffer
 
 	// 檢查可用資金
-	if fundsAvailable < lb.config.MinLoan {
+	if fundsAvailable < lb.currencyConfig.MinLoan {
 		return loanOffers
 	}
 
 	splitFundsAvailable := fundsAvailable
 
 	// 高額持有策略
-	if lb.config.HighHoldAmount > lb.config.MinLoan {
+	if lb.currencyConfig.HighHoldAmount > lb.currencyConfig.MinLoan {
 		highHoldOffers := lb.calculateHighHoldOffers(&splitFundsAvailable)
 		loanOffers = append(loanOffers, highHoldOffers...)
 	}
 
 	// 分散貸出策略
-	if splitFundsAvailable >= lb.config.MinLoan {
+	if splitFundsAvailable >= lb.currencyConfig.MinLoan {
 		spreadOffers := lb.calculateSpreadOffers(splitFundsAvailable, fundingBook)
 		loanOffers = append(loanOffers, spreadOffers...)
 	}
@@ -173,14 +192,14 @@ func (lb *LendingBot) calculateLoanOffers(fundsAvailable float64, fundingBook []
 func (lb *LendingBot) calculateHighHoldOffers(splitFundsAvailable *float64) []*LoanOffer {
 	var offers []*LoanOffer
 
-	ordersCount := lb.config.HighHoldOrders
+	ordersCount := lb.currencyConfig.HighHoldOrders
 	if ordersCount <= 0 {
 		ordersCount = 1
 	}
 
-	highHold := lb.config.HighHoldAmount
-	if lb.config.MaxLoan > 0 && highHold > lb.config.MaxLoan {
-		highHold = lb.config.MaxLoan
+	highHold := lb.currencyConfig.HighHoldAmount
+	if lb.currencyConfig.MaxLoan > 0 && highHold > lb.currencyConfig.MaxLoan {
+		highHold = lb.currencyConfig.MaxLoan
 	}
 
 	possibleOrders := int(*splitFundsAvailable / highHold)
@@ -207,8 +226,8 @@ func (lb *LendingBot) calculateHighHoldOffers(splitFundsAvailable *float64) []*L
 func (lb *LendingBot) calculateSpreadOffers(splitFundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer {
 	var offers []*LoanOffer
 
-	numSplits := lb.config.SpreadLend
-	if numSplits <= 0 || splitFundsAvailable < lb.config.MinLoan {
+	numSplits := lb.currencyConfig.SpreadLend
+	if numSplits <= 0 || splitFundsAvailable < lb.currencyConfig.MinLoan {
 		return offers
 	}
 
@@ -217,7 +236,7 @@ func (lb *LendingBot) calculateSpreadOffers(splitFundsAvailable float64, funding
 	amtEach = float64(int64(amtEach*100)) / 100.0
 
 	// 調整分割數
-	for amtEach <= lb.config.MinLoan && numSplits > 1 {
+	for amtEach <= lb.currencyConfig.MinLoan && numSplits > 1 {
 		numSplits--
 		amtEach = splitFundsAvailable / float64(numSplits)
 		amtEach = float64(int64(amtEach*100)) / 100.0
@@ -227,11 +246,11 @@ func (lb *LendingBot) calculateSpreadOffers(splitFundsAvailable float64, funding
 	}
 
 	// 計算利率遞增量
-	gapClimb := (lb.config.GapTop - lb.config.GapBottom) / float64(numSplits)
-	nextLend := lb.config.GapBottom
+	gapClimb := (lb.currencyConfig.GapTop - lb.currencyConfig.GapBottom) / float64(numSplits)
+	nextLend := lb.currencyConfig.GapBottom
 
 	depthIndex := 0
-	minDailyRate := lb.config.GetMinDailyRateDecimal()
+	minDailyRate := lb.GetMinDailyRateDecimal()
 
 	for numSplits > 0 {
 		// 累計市場量至指定利率區間（僅在有funding book數據時）
@@ -243,11 +262,11 @@ func (lb *LendingBot) calculateSpreadOffers(splitFundsAvailable float64, funding
 
 		// 計算金額
 		allocAmount := amtEach
-		if lb.config.MaxLoan > 0 && allocAmount > lb.config.MaxLoan {
-			allocAmount = lb.config.MaxLoan
+		if lb.currencyConfig.MaxLoan > 0 && allocAmount > lb.currencyConfig.MaxLoan {
+			allocAmount = lb.currencyConfig.MaxLoan
 		}
 
-		if allocAmount < lb.config.MinLoan {
+		if allocAmount < lb.currencyConfig.MinLoan {
 			break
 		}
 
@@ -287,9 +306,9 @@ func (lb *LendingBot) calculatePeriod(dailyRate float64) int {
 	oneTwentyThreshold := lb.config.GetOneTwentyDayThresholdDecimal()
 	thirtyThreshold := lb.config.GetThirtyDayThresholdDecimal()
 
-	if lb.config.OneTwentyDayLendRateThreshold > 0 && dailyRate >= oneTwentyThreshold {
+	if lb.currencyConfig.OneTwentyDayLendRateThreshold > 0 && dailyRate >= oneTwentyThreshold {
 		return constants.Period120Days
-	} else if lb.config.ThirtyDayLendRateThreshold > 0 && dailyRate >= thirtyThreshold {
+	} else if lb.currencyConfig.ThirtyDayLendRateThreshold > 0 && dailyRate >= thirtyThreshold {
 		return constants.Period30Days
 	} else {
 		return constants.DefaultPeriodDays
@@ -299,7 +318,7 @@ func (lb *LendingBot) calculatePeriod(dailyRate float64) int {
 // placeLoanOffers 下單
 func (lb *LendingBot) placeLoanOffers(loanOffers []*LoanOffer, hasPendingOrders bool) error {
 	orderCount := 0
-	fundingSymbol := lb.config.GetFundingSymbol()
+	fundingSymbol := lb.GetFundingSymbol()
 
 	for _, offer := range loanOffers {
 		if lb.config.OrderLimit != 0 && orderCount >= lb.config.OrderLimit {
@@ -309,7 +328,7 @@ func (lb *LendingBot) placeLoanOffers(loanOffers []*LoanOffer, hasPendingOrders 
 		rate := offer.Rate
 		if !hasPendingOrders {
 			// 添加利率加成
-			rate += lb.rateConverter.PercentageToDecimal(lb.config.RateBonus)
+			rate += lb.rateConverter.PercentageToDecimal(lb.currencyConfig.RateBonus)
 		}
 
 		// 驗證利率
@@ -344,7 +363,7 @@ func (lb *LendingBot) placeLoanOffers(loanOffers []*LoanOffer, hasPendingOrders 
 func (lb *LendingBot) CheckRateThreshold() (bool, float64, error) {
 	// 獲取5分鐘K線數據（12根，相當於1小時）
 	candles, err := lb.client.GetFundingCandles(
-		lb.config.GetFundingSymbol(),
+		lb.GetFundingSymbol(),
 		"5m",
 		12,
 	)
@@ -355,10 +374,10 @@ func (lb *LendingBot) CheckRateThreshold() (bool, float64, error) {
 	// 找到最近12根K線中的最高利率
 	highestRate := lb.findMaxRate(candles)
 	percentageRate := lb.rateConverter.DecimalDailyToPercentageDaily(highestRate)
-	exceeded := percentageRate > lb.config.NotifyRateThreshold
+	exceeded := percentageRate > lb.currencyConfig.NotifyRateThreshold
 
 	log.Printf("K線閾值檢查 - 最近12根5分鐘K線最高利率: %.4f%%, 閾值: %.4f%%, 超過: %v",
-		percentageRate, lb.config.NotifyRateThreshold, exceeded)
+		percentageRate, lb.currencyConfig.NotifyRateThreshold, exceeded)
 
 	return exceeded, percentageRate, nil
 }
@@ -373,7 +392,7 @@ func (lb *LendingBot) CheckNewLendingCredits() error {
 	log.Println("檢查新的借貸訂單...")
 
 	// 獲取當前活躍的借貸訂單
-	credits, err := lb.client.GetFundingCredits(lb.config.GetFundingSymbol())
+	credits, err := lb.client.GetFundingCredits(lb.GetFundingSymbol())
 	if err != nil {
 		log.Printf("獲取借貸訂單失敗: %v", err)
 		return err
@@ -499,7 +518,7 @@ func (lb *LendingBot) sendLendingNotification(credits []*bitfinex.FundingCredit)
 
 // GetActiveLendingCredits 獲取活躍借貸訂單（供 Telegram 指令使用）
 func (lb *LendingBot) GetActiveLendingCredits() ([]*bitfinex.FundingCredit, error) {
-	return lb.client.GetFundingCredits(lb.config.GetFundingSymbol())
+	return lb.client.GetFundingCredits(lb.GetFundingSymbol())
 }
 
 // calculateKlineOffers 基於K線數據計算貸出訂單
@@ -507,13 +526,13 @@ func (lb *LendingBot) calculateKlineOffers(fundsAvailable float64) []*LoanOffer 
 	var loanOffers []*LoanOffer
 
 	// 檢查可用資金
-	if fundsAvailable < lb.config.MinLoan {
+	if fundsAvailable < lb.currencyConfig.MinLoan {
 		return loanOffers
 	}
 
 	// 獲取K線數據
 	candles, _ := lb.client.GetFundingCandles(
-		lb.config.GetFundingSymbol(),
+		lb.GetFundingSymbol(),
 		lb.config.KlineTimeFrame,
 		lb.config.KlinePeriod,
 	)
@@ -527,7 +546,7 @@ func (lb *LendingBot) calculateKlineOffers(fundsAvailable float64) []*LoanOffer 
 	targetRate := highestRate * spreadMultiplier
 
 	// 確保不低於最小利率
-	minDailyRate := lb.config.GetMinDailyRateDecimal()
+	minDailyRate := lb.GetMinDailyRateDecimal()
 	if targetRate < minDailyRate {
 		targetRate = minDailyRate
 		log.Printf("目標利率低於最小利率，使用最小利率: %.6f%%", lb.rateConverter.DecimalToPercentage(targetRate))
@@ -540,13 +559,13 @@ func (lb *LendingBot) calculateKlineOffers(fundsAvailable float64) []*LoanOffer 
 	splitFundsAvailable := fundsAvailable
 
 	// 高額持有策略
-	if lb.config.HighHoldAmount > lb.config.MinLoan {
+	if lb.currencyConfig.HighHoldAmount > lb.currencyConfig.MinLoan {
 		highHoldOffers := lb.calculateHighHoldOffers(&splitFundsAvailable)
 		loanOffers = append(loanOffers, highHoldOffers...)
 	}
 
 	// 使用目標利率創建分散訂單
-	if splitFundsAvailable >= lb.config.MinLoan {
+	if splitFundsAvailable >= lb.currencyConfig.MinLoan {
 		klineOffers := lb.calculateKlineSpreadOffers(splitFundsAvailable, targetRate)
 		loanOffers = append(loanOffers, klineOffers...)
 	}
@@ -557,7 +576,7 @@ func (lb *LendingBot) calculateKlineOffers(fundsAvailable float64) []*LoanOffer 
 // findHighestRateFromCandles 從K線數據中找到最高利率
 func (lb *LendingBot) findHighestRateFromCandles(candles []*bitfinex.Candle) float64 {
 	if len(candles) == 0 {
-		return lb.config.GetMinDailyRateDecimal()
+		return lb.GetMinDailyRateDecimal()
 	}
 
 	// 根據配置選擇平滑方法
@@ -592,7 +611,7 @@ func (lb *LendingBot) findMaxRate(candles []*bitfinex.Candle) float64 {
 // calculateSMA 計算收盤價的簡單移動平均
 func (lb *LendingBot) calculateSMA(candles []*bitfinex.Candle) float64 {
 	if len(candles) == 0 {
-		return lb.config.GetMinDailyRateDecimal()
+		return lb.GetMinDailyRateDecimal()
 	}
 
 	sum := 0.0
@@ -605,7 +624,7 @@ func (lb *LendingBot) calculateSMA(candles []*bitfinex.Candle) float64 {
 // calculateEMAHigh 計算高點的指數移動平均
 func (lb *LendingBot) calculateEMAHigh(candles []*bitfinex.Candle) float64 {
 	if len(candles) == 0 {
-		return lb.config.GetMinDailyRateDecimal()
+		return lb.GetMinDailyRateDecimal()
 	}
 
 	// EMA 係數，期間越長係數越小
@@ -622,7 +641,7 @@ func (lb *LendingBot) calculateEMAHigh(candles []*bitfinex.Candle) float64 {
 // calculateHighLowAverage 計算高低點平均
 func (lb *LendingBot) calculateHighLowAverage(candles []*bitfinex.Candle) float64 {
 	if len(candles) == 0 {
-		return lb.config.GetMinDailyRateDecimal()
+		return lb.GetMinDailyRateDecimal()
 	}
 
 	sumHigh := 0.0
@@ -642,7 +661,7 @@ func (lb *LendingBot) calculateHighLowAverage(candles []*bitfinex.Candle) float6
 // calculate90Percentile 計算90百分位數
 func (lb *LendingBot) calculate90Percentile(candles []*bitfinex.Candle) float64 {
 	if len(candles) == 0 {
-		return lb.config.GetMinDailyRateDecimal()
+		return lb.GetMinDailyRateDecimal()
 	}
 
 	// 收集所有高點
@@ -673,8 +692,8 @@ func (lb *LendingBot) calculate90Percentile(candles []*bitfinex.Candle) float64 
 func (lb *LendingBot) calculateKlineSpreadOffers(fundsAvailable float64, targetRate float64) []*LoanOffer {
 	var offers []*LoanOffer
 
-	numSplits := lb.config.SpreadLend
-	if numSplits <= 0 || fundsAvailable < lb.config.MinLoan {
+	numSplits := lb.currencyConfig.SpreadLend
+	if numSplits <= 0 || fundsAvailable < lb.currencyConfig.MinLoan {
 		return offers
 	}
 
@@ -683,7 +702,7 @@ func (lb *LendingBot) calculateKlineSpreadOffers(fundsAvailable float64, targetR
 	amtEach = float64(int64(amtEach*100)) / 100.0
 
 	// 調整分割數
-	for amtEach <= lb.config.MinLoan && numSplits > 1 {
+	for amtEach <= lb.currencyConfig.MinLoan && numSplits > 1 {
 		numSplits--
 		amtEach = fundsAvailable / float64(numSplits)
 		amtEach = float64(int64(amtEach*100)) / 100.0
@@ -696,18 +715,18 @@ func (lb *LendingBot) calculateKlineSpreadOffers(fundsAvailable float64, targetR
 	for i := 0; i < numSplits; i++ {
 		// 計算金額
 		allocAmount := amtEach
-		if lb.config.MaxLoan > 0 && allocAmount > lb.config.MaxLoan {
-			allocAmount = lb.config.MaxLoan
+		if lb.currencyConfig.MaxLoan > 0 && allocAmount > lb.currencyConfig.MaxLoan {
+			allocAmount = lb.currencyConfig.MaxLoan
 		}
 
-		if allocAmount < lb.config.MinLoan {
+		if allocAmount < lb.currencyConfig.MinLoan {
 			break
 		}
 
 		rate := targetRate * (1 + (float64(i) * lb.config.RateRangeIncreasePercent))
 
 		// 確保利率不低於最小利率
-		minDailyRate := lb.config.GetMinDailyRateDecimal()
+		minDailyRate := lb.GetMinDailyRateDecimal()
 		if rate < minDailyRate {
 			rate = minDailyRate
 		}

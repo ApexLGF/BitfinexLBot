@@ -24,10 +24,11 @@ type BotStatus struct {
 
 // EarningsData 收益数据
 type EarningsData struct {
-	Daily   float64           `json:"daily"`
-	Weekly  float64           `json:"weekly"`
-	Monthly float64           `json:"monthly"`
-	History []EarningsHistory `json:"history"`
+	Daily    float64           `json:"daily"`
+	Weekly   float64           `json:"weekly"`
+	Monthly  float64           `json:"monthly"`
+	Currency string            `json:"currency"` // 新增币种字段
+	History  []EarningsHistory `json:"history"`
 }
 
 // EarningsHistory 收益历史记录

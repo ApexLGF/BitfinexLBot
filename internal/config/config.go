@@ -11,6 +11,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// CurrencyConfig 單個幣種的配置
+type CurrencyConfig struct {
+	Enabled                       bool    `mapstructure:"ENABLED" json:"ENABLED"`
+	MinLoan                       float64 `mapstructure:"MIN_LOAN" json:"MIN_LOAN"`
+	MaxLoan                       float64 `mapstructure:"MAX_LOAN" json:"MAX_LOAN"`
+	MinDailyLendRate              float64 `mapstructure:"MIN_DAILY_LEND_RATE" json:"MIN_DAILY_LEND_RATE"`
+	SpreadLend                    int     `mapstructure:"SPREAD_LEND" json:"SPREAD_LEND"`
+	GapBottom                     float64 `mapstructure:"GAP_BOTTOM" json:"GAP_BOTTOM"`
+	GapTop                        float64 `mapstructure:"GAP_TOP" json:"GAP_TOP"`
+	ThirtyDayLendRateThreshold    float64 `mapstructure:"THIRTY_DAY_LEND_RATE_THRESHOLD" json:"THIRTY_DAY_LEND_RATE_THRESHOLD"`
+	OneTwentyDayLendRateThreshold float64 `mapstructure:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD" json:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD"`
+	RateBonus                     float64 `mapstructure:"RATE_BONUS" json:"RATE_BONUS"`
+	HighHoldRate                  float64 `mapstructure:"HIGH_HOLD_RATE" json:"HIGH_HOLD_RATE"`
+	HighHoldAmount                float64 `mapstructure:"HIGH_HOLD_AMOUNT" json:"HIGH_HOLD_AMOUNT"`
+	HighHoldOrders                int     `mapstructure:"HIGH_HOLD_ORDERS" json:"HIGH_HOLD_ORDERS"`
+	NotifyRateThreshold           float64 `mapstructure:"NOTIFY_RATE_THRESHOLD" json:"NOTIFY_RATE_THRESHOLD"`
+	ReserveAmount                 float64 `mapstructure:"RESERVE_AMOUNT" json:"RESERVE_AMOUNT"`
+}
+
 // Config 應用程式配置結構
 type Config struct {
 	// API 配置
@@ -18,15 +37,16 @@ type Config struct {
 	BitfinexSecretKey string `mapstructure:"BITFINEX_SECRET_KEY"`
 
 	// 基本設定
-	Currency   string `mapstructure:"CURRENCY"`
-	OrderLimit int    `mapstructure:"ORDER_LIMIT"`
-	MinutesRun int    `mapstructure:"MINUTES_RUN"`
+	OrderLimit int `mapstructure:"ORDER_LIMIT"`
+	MinutesRun int `mapstructure:"MINUTES_RUN"`
 
-	// 貸出限制
-	MinLoan float64 `mapstructure:"MIN_LOAN"`
-	MaxLoan float64 `mapstructure:"MAX_LOAN"`
+	// 多幣種配置 - 新增
+	Currencies map[string]*CurrencyConfig `mapstructure:"CURRENCIES"`
 
-	// 利率策略
+	// 向後兼容的單幣種配置（保留但標記為廢棄）
+	Currency                      string  `mapstructure:"CURRENCY"`
+	MinLoan                       float64 `mapstructure:"MIN_LOAN"`
+	MaxLoan                       float64 `mapstructure:"MAX_LOAN"`
 	MinDailyLendRate              float64 `mapstructure:"MIN_DAILY_LEND_RATE"`
 	SpreadLend                    int     `mapstructure:"SPREAD_LEND"`
 	GapBottom                     float64 `mapstructure:"GAP_BOTTOM"`
@@ -34,28 +54,24 @@ type Config struct {
 	ThirtyDayLendRateThreshold    float64 `mapstructure:"THIRTY_DAY_LEND_RATE_THRESHOLD"`
 	OneTwentyDayLendRateThreshold float64 `mapstructure:"ONE_TWENTY_DAY_LEND_RATE_THRESHOLD"`
 	RateBonus                     float64 `mapstructure:"RATE_BONUS"`
-
-	// 高額持有策略
-	HighHoldRate   float64 `mapstructure:"HIGH_HOLD_RATE"`
-	HighHoldAmount float64 `mapstructure:"HIGH_HOLD_AMOUNT"`
-	HighHoldOrders int     `mapstructure:"HIGH_HOLD_ORDERS"`
+	HighHoldRate                  float64 `mapstructure:"HIGH_HOLD_RATE"`
+	HighHoldAmount                float64 `mapstructure:"HIGH_HOLD_AMOUNT"`
+	HighHoldOrders                int     `mapstructure:"HIGH_HOLD_ORDERS"`
+	NotifyRateThreshold           float64 `mapstructure:"NOTIFY_RATE_THRESHOLD"`
+	ReserveAmount                 float64 `mapstructure:"RESERVE_AMOUNT"`
 
 	// Telegram 設定
 	TelegramBotToken  string `mapstructure:"TELEGRAM_BOT_TOKEN"`
 	TelegramAuthToken string `mapstructure:"TELEGRAM_AUTH_TOKEN"`
 
-	// 通知設定
-	NotifyRateThreshold float64 `mapstructure:"NOTIFY_RATE_THRESHOLD"`
-	ReserveAmount       float64 `mapstructure:"RESERVE_AMOUNT"`
-
-	// 智能策略設定
+	// 智能策略設定（全局）
 	EnableSmartStrategy      bool    `mapstructure:"ENABLE_SMART_STRATEGY"`
 	VolatilityThreshold      float64 `mapstructure:"VOLATILITY_THRESHOLD"`
 	MaxRateMultiplier        float64 `mapstructure:"MAX_RATE_MULTIPLIER"`
 	MinRateMultiplier        float64 `mapstructure:"MIN_RATE_MULTIPLIER"`
 	RateRangeIncreasePercent float64 `mapstructure:"RATE_RANGE_INCREASE_PERCENT"` // 利率範圍增加百分比
 
-	// K線策略設定
+	// K線策略設定（全局）
 	EnableKlineStrategy bool    `mapstructure:"ENABLE_KLINE_STRATEGY"` // 啟用K線策略
 	KlineTimeFrame      string  `mapstructure:"KLINE_TIME_FRAME"`      // K線時間框架，預設15m
 	KlinePeriod         int     `mapstructure:"KLINE_PERIOD"`          // K線週期數量，預設24（6小時）
@@ -91,6 +107,15 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, errors.NewConfigError("failed to unmarshal config", err)
 	}
 
+	// 檢查是否為舊格式配置並自動遷移
+	if config.Currency != "" && len(config.Currencies) == 0 {
+		fmt.Println("[Config] 檢測到舊格式配置，自動遷移到多幣種格式")
+		config.migrateFromLegacyConfig()
+	}
+
+	// 設置多幣種配置的預設值
+	config.setMultiCurrencyDefaults()
+
 	// 設置智能策略參數的預設值
 	config.setSmartStrategyDefaults()
 
@@ -118,23 +143,33 @@ func (c *Config) Validate() error {
 	if c.BitfinexSecretKey == "" || c.BitfinexSecretKey == "your_secret_key_here" {
 		return errors.NewValidationError("BITFINEX_SECRET_KEY is required and must be set to your actual secret key")
 	}
-	if c.Currency == "" {
-		return errors.NewValidationError("CURRENCY is required")
+
+	// 驗證多幣種配置
+	if len(c.Currencies) == 0 {
+		return errors.NewValidationError("至少需要配置一個幣種")
 	}
-	if c.MinLoan <= 0 {
-		return errors.NewValidationError("MIN_LOAN must be positive")
-	}
-	if c.MaxLoan > 0 && c.MaxLoan < c.MinLoan {
-		return errors.NewValidationError("MAX_LOAN cannot be less than MIN_LOAN")
-	}
-	if c.MinDailyLendRate <= 0 {
-		return errors.NewValidationError("MIN_DAILY_LEND_RATE must be positive")
-	}
-	if c.SpreadLend <= 0 {
-		return errors.NewValidationError("SPREAD_LEND must be positive")
-	}
-	if c.GapBottom < 0 || c.GapTop < 0 || c.GapTop <= c.GapBottom {
-		return errors.NewValidationError("invalid GAP_BOTTOM or GAP_TOP values")
+
+	// 驗證每個幣種的配置
+	for currency, currencyConfig := range c.Currencies {
+		if !currencyConfig.Enabled {
+			continue
+		}
+
+		if currencyConfig.MinLoan <= 0 {
+			return errors.NewValidationError(fmt.Sprintf("%s: MIN_LOAN must be positive", currency))
+		}
+		if currencyConfig.MaxLoan > 0 && currencyConfig.MaxLoan < currencyConfig.MinLoan {
+			return errors.NewValidationError(fmt.Sprintf("%s: MAX_LOAN cannot be less than MIN_LOAN", currency))
+		}
+		if currencyConfig.MinDailyLendRate <= 0 {
+			return errors.NewValidationError(fmt.Sprintf("%s: MIN_DAILY_LEND_RATE must be positive", currency))
+		}
+		if currencyConfig.SpreadLend <= 0 {
+			return errors.NewValidationError(fmt.Sprintf("%s: SPREAD_LEND must be positive", currency))
+		}
+		if currencyConfig.GapBottom < 0 || currencyConfig.GapTop < 0 || currencyConfig.GapTop <= currencyConfig.GapBottom {
+			return errors.NewValidationError(fmt.Sprintf("%s: invalid GAP_BOTTOM or GAP_TOP values", currency))
+		}
 	}
 
 	// 驗證智能策略參數
@@ -397,3 +432,57 @@ func formatConfigValue(value interface{}) string {
 func ReloadConfig(configPath string) (*Config, error) {
 	return LoadConfig(configPath)
 }
+
+// migrateFromLegacyConfig 從舊配置遷移到多幣種格式
+func (c *Config) migrateFromLegacyConfig() {
+	c.Currencies = make(map[string]*CurrencyConfig)
+	c.Currencies[c.Currency] = &CurrencyConfig{
+		Enabled:                       true,
+		MinLoan:                       c.MinLoan,
+		MaxLoan:                       c.MaxLoan,
+		MinDailyLendRate:              c.MinDailyLendRate,
+		SpreadLend:                    c.SpreadLend,
+		GapBottom:                     c.GapBottom,
+		GapTop:                        c.GapTop,
+		ThirtyDayLendRateThreshold:    c.ThirtyDayLendRateThreshold,
+		OneTwentyDayLendRateThreshold: c.OneTwentyDayLendRateThreshold,
+		RateBonus:                     c.RateBonus,
+		HighHoldRate:                  c.HighHoldRate,
+		HighHoldAmount:                c.HighHoldAmount,
+		HighHoldOrders:                c.HighHoldOrders,
+		NotifyRateThreshold:           c.NotifyRateThreshold,
+		ReserveAmount:                 c.ReserveAmount,
+	}
+	fmt.Printf("[Config] 已將 %s 遷移到多幣種配置\n", c.Currency)
+}
+
+// setMultiCurrencyDefaults 設置多幣種配置的預設值
+func (c *Config) setMultiCurrencyDefaults() {
+	if len(c.Currencies) == 0 {
+		return
+	}
+
+	// 為每個幣種設置預設值
+	for currency, currencyConfig := range c.Currencies {
+		if currencyConfig.SpreadLend == 0 {
+			currencyConfig.SpreadLend = 30
+		}
+		if currencyConfig.GapBottom == 0 {
+			currencyConfig.GapBottom = 10
+		}
+		if currencyConfig.GapTop == 0 {
+			currencyConfig.GapTop = 5000
+		}
+		if currencyConfig.ThirtyDayLendRateThreshold == 0 {
+			currencyConfig.ThirtyDayLendRateThreshold = 0.04
+		}
+		if currencyConfig.OneTwentyDayLendRateThreshold == 0 {
+			currencyConfig.OneTwentyDayLendRateThreshold = 0.045
+		}
+		if currencyConfig.RateBonus == 0 {
+			currencyConfig.RateBonus = 0.002
+		}
+		fmt.Printf("[Config] 已為幣種 %s 設置預設值\n", currency)
+	}
+}
+

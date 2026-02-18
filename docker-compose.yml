@@ -1,33 +1,38 @@
 services:
   bitfinex-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # 使用 Docker Hub 镜像（推荐生产环境）
+    image: apexlgf/bitfinexwebbot:v2.4.4  # 修复智能策略配置问题和Web界面优化
+
+    # 或者使用本地构建（开发环境）
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
     container_name: bitfinex-bot-web
     ports:
       - "8089:8089"  # Web界面端口
     volumes:
       # 配置文件（必需）
-      - ./config.yaml:/app/config.yaml:rw
-      
+      - ./config.yaml:/app/config.yaml:ro  # 只读模式，防止容器修改配置
+
       # 日志持久化
       - bitfinex_logs:/app/logs
-      
+
       # 可选：自定义Web文件
       # - ./custom-web:/usr/share/nginx/html
-    
+
     environment:
       - TZ=Asia/Shanghai
-    
+
     restart: unless-stopped
-    
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8089/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
-    
+
     logging:
       driver: "json-file"
       options:

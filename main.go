@@ -16,18 +16,18 @@ import (
 	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 	"github.com/ApexLGF/BitfinexLBot/internal/config"
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
+	"github.com/ApexLGF/BitfinexLBot/internal/currency"
 	"github.com/ApexLGF/BitfinexLBot/internal/rates"
-	"github.com/ApexLGF/BitfinexLBot/internal/strategy"
 )
 
 // Application 應用程式主結構
 type Application struct {
-	config        *config.Config
-	bfxClient     *bitfinex.Client
-	apiServer     *api.Server
-	apiHandler    *api.Handler
-	lendingBot    *strategy.LendingBot
-	rateConverter *rates.Converter
+	config          *config.Config
+	bfxClient       *bitfinex.Client
+	apiServer       *api.Server
+	apiHandler      *api.Handler
+	currencyManager *currency.CurrencyManager // 替代 lendingBot
+	rateConverter   *rates.Converter
 
 	// 併發控制
 	ctx    context.Context
@@ -46,8 +46,8 @@ func NewApplication(configPath string) (*Application, error) {
 	// 創建 Bitfinex 客戶端
 	bfxClient := bitfinex.NewClient(cfg.BitfinexApiKey, cfg.BitfinexSecretKey)
 
-	// 創建貸出機器人
-	lendingBot := strategy.NewLendingBot(cfg, bfxClient)
+	// 創建幣種管理器（替代單一 LendingBot）
+	currencyManager := currency.NewCurrencyManager(cfg, bfxClient)
 
 	// 創建利率轉換器
 	rateConverter := rates.NewConverter()
@@ -58,29 +58,27 @@ func NewApplication(configPath string) (*Application, error) {
 	// 創建API處理器和服務器
 	var apiHandler *api.Handler
 	var apiServer *api.Server
-	
+
 	if cfg.APIEnabled {
-		apiHandler = api.NewHandler(cfg, bfxClient, lendingBot, configPath)
+		apiHandler = api.NewHandler(cfg, bfxClient, currencyManager, configPath)
 		apiServer = api.NewServer(cfg.APIPort, cfg.APIHost, apiHandler)
 	}
 
 	app := &Application{
-		config:        cfg,
-		bfxClient:     bfxClient,
-		apiServer:     apiServer,
-		apiHandler:    apiHandler,
-		lendingBot:    lendingBot,
-		rateConverter: rateConverter,
-		ctx:           ctx,
-		cancel:        cancel,
+		config:          cfg,
+		bfxClient:       bfxClient,
+		apiServer:       apiServer,
+		apiHandler:      apiHandler,
+		currencyManager: currencyManager,
+		rateConverter:   rateConverter,
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 
 	// 設置借貸機器人的通知回調（如果有API處理器）
 	if apiHandler != nil {
 		// 設置初始狀態
 		apiHandler.SetRunning(true)
-		// 這裡可以設置日志回調或其他通知方式
-		// lendingBot.SetNotifyCallback(apiHandler.LogNotification)
 	}
 
 	return app, nil
@@ -232,10 +230,11 @@ func (app *Application) scheduleMainTask() {
 
 // executeMainTask 執行主要任務
 func (app *Application) executeMainTask() {
-	if err := app.lendingBot.Execute(); err != nil {
+	// 執行所有啟用幣種的策略
+	if err := app.currencyManager.ExecuteAll(); err != nil {
 		log.Printf("執行貸出策略失敗: %v", err)
 	}
-	
+
 	// 更新API處理器的狀態
 	if app.apiHandler != nil {
 		app.apiHandler.UpdateNextRun()
@@ -276,25 +275,37 @@ func (app *Application) scheduleHourlyRateCheck() {
 func (app *Application) checkRateThreshold() {
 	log.Println("定時檢查貸出利率（基於5分鐘K線12根高點）...")
 
-	exceeded, percentageRate, err := app.lendingBot.CheckRateThreshold()
-	if err != nil {
-		log.Printf("取得利率數據失敗: %v", err)
-		return
-	}
-
-	log.Printf("最近1小時最高利率: %.4f%%, 閾值: %.4f%%", percentageRate, app.config.NotifyRateThreshold)
-
-	if exceeded {
-		message := fmt.Sprintf("⚠️ 定時檢查提醒: 最近1小時最高利率 %.4f%% 已超過閾值 %.4f%%\n\n📊 檢查方式: 5分鐘K線最近12根高點分析",
-			percentageRate, app.config.NotifyRateThreshold)
-		
-		log.Printf("利率提醒: %s", message)
-		// 通過API處理器記錄日志或發送通知
-		if app.apiHandler != nil {
-			// TODO: 實現通知功能
+	// 檢查所有幣種的利率閾值
+	for _, currency := range app.currencyManager.GetEnabledCurrencies() {
+		bot, ok := app.currencyManager.GetBot(currency)
+		if !ok {
+			continue
 		}
-	} else {
-		log.Println("最近1小時最高利率低於閾值，無需發送通知")
+
+		exceeded, percentageRate, err := bot.CheckRateThreshold()
+		if err != nil {
+			log.Printf("[%s] 取得利率數據失敗: %v", currency, err)
+			continue
+		}
+
+		// 獲取該幣種的通知閾值
+		currencyConfig := app.config.Currencies[currency]
+		threshold := currencyConfig.NotifyRateThreshold
+
+		log.Printf("[%s] 最近1小時最高利率: %.4f%%, 閾值: %.4f%%", currency, percentageRate, threshold)
+
+		if exceeded {
+			message := fmt.Sprintf("⚠️ [%s] 定時檢查提醒: 最近1小時最高利率 %.4f%% 已超過閾值 %.4f%%\n\n📊 檢查方式: 5分鐘K線最近12根高點分析",
+				currency, percentageRate, threshold)
+
+			log.Printf("利率提醒: %s", message)
+			// 通過API處理器記錄日志或發送通知
+			if app.apiHandler != nil {
+				// TODO: 實現通知功能
+			}
+		} else {
+			log.Printf("[%s] 最近1小時最高利率低於閾值，無需發送通知", currency)
+		}
 	}
 }
 
@@ -320,8 +331,16 @@ func (app *Application) scheduleLendingCheck() {
 
 // executeLendingCheck 執行借貸訂單檢查
 func (app *Application) executeLendingCheck() {
-	if err := app.lendingBot.CheckNewLendingCredits(); err != nil {
-		log.Printf("檢查借貸訂單失敗: %v", err)
+	// 檢查所有幣種的借貸訂單
+	for _, currency := range app.currencyManager.GetEnabledCurrencies() {
+		bot, ok := app.currencyManager.GetBot(currency)
+		if !ok {
+			continue
+		}
+
+		if err := bot.CheckNewLendingCredits(); err != nil {
+			log.Printf("[%s] 檢查借貸訂單失敗: %v", currency, err)
+		}
 	}
 }
 

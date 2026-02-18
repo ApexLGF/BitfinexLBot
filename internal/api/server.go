@@ -50,32 +50,36 @@ func (s *Server) setupRoutes() {
 	{
 		// 机器人状态
 		api.GET("/status", s.handler.GetStatus)
-		
+
 		// 收益数据
 		api.GET("/earnings", s.handler.GetEarnings)
 		api.GET("/earnings/daily", s.handler.GetDailyEarnings)
 		api.GET("/earnings/weekly", s.handler.GetWeeklyEarnings)
-		
+		api.GET("/earnings/yearly", s.handler.GetYearlyEarnings)
+
+		// FRR 利率
+		api.GET("/frr-rates", s.handler.GetFRRRates)
+
 		// 放贷订单
 		api.GET("/offers", s.handler.GetOffers)
 		api.GET("/offers/active", s.handler.GetActiveOffers)
-		
+
 		// 已贷出订单
 		api.GET("/credits", s.handler.GetFundingCredits)
-		
+
 		// 钱包信息
 		api.GET("/wallets", s.handler.GetWallets)
-		
+
 		// 配置管理
 		api.GET("/config", s.handler.GetConfig)
 		api.POST("/config", s.handler.UpdateConfig)
-		
+
 		// 机器人控制
 		api.POST("/control", s.handler.Control)
-		
+
 		// 日志
 		api.GET("/logs", s.handler.GetLogs)
-		
+
 		// 系统信息
 		api.GET("/info", s.handler.GetSystemInfo)
 	}

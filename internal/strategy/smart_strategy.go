@@ -11,15 +11,17 @@ import (
 
 // SmartStrategy 智能策略引擎
 type SmartStrategy struct {
-	config   *config.Config
-	analyzer *MarketAnalyzer
+	config         *config.Config
+	currencyConfig *config.CurrencyConfig
+	analyzer       *MarketAnalyzer
 }
 
 // NewSmartStrategy 創建智能策略引擎
-func NewSmartStrategy(cfg *config.Config) *SmartStrategy {
+func NewSmartStrategy(cfg *config.Config, currencyConfig *config.CurrencyConfig) *SmartStrategy {
 	return &SmartStrategy{
-		config:   cfg,
-		analyzer: NewMarketAnalyzer(),
+		config:         cfg,
+		currencyConfig: currencyConfig,
+		analyzer:       NewMarketAnalyzer(),
 	}
 }
 
@@ -27,7 +29,7 @@ func NewSmartStrategy(cfg *config.Config) *SmartStrategy {
 func (ss *SmartStrategy) CalculateSmartOffers(fundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer {
 	var loanOffers []*LoanOffer
 
-	if fundsAvailable < ss.config.MinLoan {
+	if fundsAvailable < ss.currencyConfig.MinLoan {
 		return loanOffers
 	}
 
@@ -54,13 +56,13 @@ func (ss *SmartStrategy) CalculateSmartOffers(fundsAvailable float64, fundingBoo
 		highHoldRatio*100, highHoldAmount, spreadRatio*100, spreadAmount)
 
 	// 高額持有策略（動態利率）
-	if ss.config.HighHoldAmount > ss.config.MinLoan && highHoldAmount >= ss.config.HighHoldAmount {
+	if ss.currencyConfig.HighHoldAmount > ss.currencyConfig.MinLoan && highHoldAmount >= ss.currencyConfig.HighHoldAmount {
 		highHoldOffers := ss.calculateSmartHighHoldOffers(&splitFundsAvailable, marketCondition, fundingBook)
 		loanOffers = append(loanOffers, highHoldOffers...)
 	}
 
 	// 分散貸出策略（智能優化）
-	if splitFundsAvailable >= ss.config.MinLoan {
+	if splitFundsAvailable >= ss.currencyConfig.MinLoan {
 		spreadOffers := ss.calculateSmartSpreadOffers(splitFundsAvailable, fundingBook, marketCondition)
 		loanOffers = append(loanOffers, spreadOffers...)
 	}
@@ -106,14 +108,14 @@ func (ss *SmartStrategy) calculateOptimalAllocation(condition *MarketCondition) 
 func (ss *SmartStrategy) calculateSmartHighHoldOffers(splitFundsAvailable *float64, condition *MarketCondition, fundingBook []*bitfinex.FundingBookEntry) []*LoanOffer {
 	var offers []*LoanOffer
 
-	ordersCount := ss.config.HighHoldOrders
+	ordersCount := ss.currencyConfig.HighHoldOrders
 	if ordersCount <= 0 {
 		ordersCount = 1
 	}
 
-	highHold := ss.config.HighHoldAmount
-	if ss.config.MaxLoan > 0 && highHold > ss.config.MaxLoan {
-		highHold = ss.config.MaxLoan
+	highHold := ss.currencyConfig.HighHoldAmount
+	if ss.currencyConfig.MaxLoan > 0 && highHold > ss.currencyConfig.MaxLoan {
+		highHold = ss.currencyConfig.MaxLoan
 	}
 
 	// 計算動態利率
@@ -147,7 +149,7 @@ func (ss *SmartStrategy) calculateSmartHighHoldOffers(splitFundsAvailable *float
 
 // calculateDynamicHighHoldRate 計算動態高額持有利率
 func (ss *SmartStrategy) calculateDynamicHighHoldRate(condition *MarketCondition, fundingBook []*bitfinex.FundingBookEntry) float64 {
-	baseRate := ss.config.GetHighHoldRateDecimal()
+	baseRate := ss.currencyConfig.HighHoldRate / 100.0
 
 	// 如果沒有市場數據，使用基礎利率
 	if len(fundingBook) == 0 {
@@ -181,8 +183,8 @@ func (ss *SmartStrategy) calculateDynamicHighHoldRate(condition *MarketCondition
 func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64, fundingBook []*bitfinex.FundingBookEntry, condition *MarketCondition) []*LoanOffer {
 	var offers []*LoanOffer
 
-	numSplits := ss.config.SpreadLend
-	if numSplits <= 0 || splitFundsAvailable < ss.config.MinLoan {
+	numSplits := ss.currencyConfig.SpreadLend
+	if numSplits <= 0 || splitFundsAvailable < ss.currencyConfig.MinLoan {
 		return offers
 	}
 
@@ -197,7 +199,7 @@ func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64,
 	amtEach = float64(int64(amtEach*100)) / 100.0
 
 	// 調整分割數
-	for amtEach <= ss.config.MinLoan && numSplits > 1 {
+	for amtEach <= ss.currencyConfig.MinLoan && numSplits > 1 {
 		numSplits--
 		amtEach = splitFundsAvailable / float64(numSplits)
 		amtEach = float64(int64(amtEach*100)) / 100.0
@@ -213,7 +215,7 @@ func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64,
 	gapClimb := (gapTop - gapBottom) / float64(numSplits)
 	nextLend := gapBottom
 
-	minDailyRate := ss.config.GetMinDailyRateDecimal()
+	minDailyRate := ss.currencyConfig.MinDailyLendRate / 100.0
 
 	log.Printf("智能分散策略 - 分割數: %d, 深度範圍: %.0f-%.0f, Funding Book數據: %d筆",
 		numSplits, gapBottom, gapTop, len(fundingBook))
@@ -247,11 +249,11 @@ func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64,
 
 		// 計算金額
 		allocAmount := amtEach
-		if ss.config.MaxLoan > 0 && allocAmount > ss.config.MaxLoan {
-			allocAmount = ss.config.MaxLoan
+		if ss.currencyConfig.MaxLoan > 0 && allocAmount > ss.currencyConfig.MaxLoan {
+			allocAmount = ss.currencyConfig.MaxLoan
 		}
 
-		if allocAmount < ss.config.MinLoan {
+		if allocAmount < ss.currencyConfig.MinLoan {
 			break
 		}
 
@@ -442,14 +444,14 @@ func (ss *SmartStrategy) calculateSyntheticRate(depthIndex int, minDailyRate flo
 
 // calculateSmartPeriod 計算智能期間
 func (ss *SmartStrategy) calculateSmartPeriod(dailyRate float64, condition *MarketCondition) int {
-	oneTwentyThreshold := ss.config.GetOneTwentyDayThresholdDecimal()
-	thirtyThreshold := ss.config.GetThirtyDayThresholdDecimal()
+	oneTwentyThreshold := ss.currencyConfig.OneTwentyDayLendRateThreshold / 100.0
+	thirtyThreshold := ss.currencyConfig.ThirtyDayLendRateThreshold / 100.0
 
 	// 基礎期間邏輯
 	basePeriod := constants.DefaultPeriodDays
-	if ss.config.OneTwentyDayLendRateThreshold > 0 && dailyRate >= oneTwentyThreshold {
+	if ss.currencyConfig.OneTwentyDayLendRateThreshold > 0 && dailyRate >= oneTwentyThreshold {
 		basePeriod = constants.Period120Days
-	} else if ss.config.ThirtyDayLendRateThreshold > 0 && dailyRate >= thirtyThreshold {
+	} else if ss.currencyConfig.ThirtyDayLendRateThreshold > 0 && dailyRate >= thirtyThreshold {
 		basePeriod = constants.Period30Days
 	}
 

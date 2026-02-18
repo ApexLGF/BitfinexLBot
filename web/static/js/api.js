@@ -45,13 +45,13 @@ class BitfinexAPI {
     }
 
     // 获取机器人状态
-    async getStatus() {
-        return this.get('/status');
+    async getStatus(queryString = '') {
+        return this.get(`/status${queryString}`);
     }
 
     // 获取收益数据
-    async getEarnings() {
-        return this.get('/earnings');
+    async getEarnings(queryString = '') {
+        return this.get(`/earnings${queryString}`);
     }
 
     // 获取日收益
@@ -65,19 +65,19 @@ class BitfinexAPI {
     }
 
     // 获取放贷订单
-    async getOffers() {
+    async getOffers(queryString = '') {
         console.log('[API] getOffers 被调用 - ', new Date().toISOString(), '- 调用栈:', new Error().stack);
-        return this.get('/offers');
+        return this.get(`/offers${queryString}`);
     }
 
     // 获取活跃订单
-    async getActiveOffers() {
-        return this.get('/offers/active');
+    async getActiveOffers(queryString = '') {
+        return this.get(`/offers/active${queryString}`);
     }
 
     // 获取已贷出订单
-    async getFundingCredits() {
-        return this.get('/credits');
+    async getFundingCredits(queryString = '') {
+        return this.get(`/credits${queryString}`);
     }
 
     // 获取配置
