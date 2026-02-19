@@ -2,6 +2,39 @@
 class CurrencyDashboard {
     constructor() {
         this.charts = {}; // 存储每个币种的图表实例
+        this.dataCache = {}; // 数据缓存
+    }
+
+    // 缓存币种数据
+    cacheData(currency, data) {
+        this.dataCache[currency] = {
+            data: data,
+            timestamp: Date.now()
+        };
+        console.log(`[Dashboard] 缓存 ${currency} 数据`);
+    }
+
+    // 获取缓存数据
+    getCachedData(currency) {
+        const cached = this.dataCache[currency];
+        if (!cached) {
+            return null;
+        }
+
+        // 检查缓存是否过期（5分钟）
+        const age = Date.now() - cached.timestamp;
+        if (age > 5 * 60 * 1000) {
+            console.log(`[Dashboard] ${currency} 缓存已过期`);
+            return null;
+        }
+
+        return cached.data;
+    }
+
+    // 清除所有缓存
+    clearCache() {
+        this.dataCache = {};
+        console.log('[Dashboard] 缓存已清除');
     }
 
     // 渲染指定币种的面板
@@ -9,7 +42,17 @@ class CurrencyDashboard {
         console.log(`[Dashboard] 渲染币种面板: ${currency}`);
 
         try {
-            // 并行获取数据
+            // 先尝试使用缓存数据
+            let cachedData = this.getCachedData(currency);
+
+            if (cachedData) {
+                console.log(`[Dashboard] 使用缓存数据渲染 ${currency}`);
+                this.renderWithData(currency, cachedData);
+                return;
+            }
+
+            // 缓存不存在或已过期，重新获取
+            console.log(`[Dashboard] 重新获取 ${currency} 数据`);
             const [earnings, offers, credits, status] = await Promise.all([
                 api.getEarnings(`?currency=${currency}`),
                 api.getOffers(`?currency=${currency}`),
@@ -17,18 +60,32 @@ class CurrencyDashboard {
                 api.getStatus(`?currency=${currency}`)
             ]);
 
-            // 更新各个部分
-            this.updateEarningsChart(currency, earnings.data);
-            this.updateOffersSection(currency, offers.data);
-            this.updateCreditsSection(currency, credits.data);
+            const data = {
+                earnings: earnings.data,
+                offers: offers.data,
+                credits: credits.data,
+                status: status.data
+            };
 
-            // 更新 Tab 统计信息
-            this.updateTabStats(currency, offers.data, credits.data, status.data, earnings.data);
+            // 缓存数据
+            this.cacheData(currency, data);
+
+            // 渲染
+            this.renderWithData(currency, data);
 
             console.log(`[Dashboard] ${currency} 面板渲染完成`);
         } catch (error) {
             console.error(`[Dashboard] 渲染 ${currency} 面板失败:`, error);
+            throw error;
         }
+    }
+
+    // 使用数据渲染
+    renderWithData(currency, data) {
+        this.updateEarningsChart(currency, data.earnings);
+        this.updateOffersSection(currency, data.offers);
+        this.updateCreditsSection(currency, data.credits);
+        this.updateTabStats(currency, data.offers, data.credits, data.status, data.earnings);
     }
 
     // 更新 Tab 统计信息

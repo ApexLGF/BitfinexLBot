@@ -2,10 +2,17 @@
 class BitfinexBotApp {
     constructor() {
         this.isConnected = false;
+        this.lastConnectionTime = null;
         this.logUpdateTimer = null;
         this.logUpdateInterval = 3000; // 3秒更新一次日志
         this.overallInfoTimer = null;
         this.overallInfoInterval = 60000; // 60秒更新一次整体信息
+        this.fullRefreshTimer = null;
+        this.fullRefreshInterval = 300000; // 默认 5 分钟
+        this.minutesRun = 5;
+        this.enabledCurrencies = [];
+        this.countdownTimer = null;
+        this.nextRefreshTime = null;
 
         this.init();
     }
@@ -26,6 +33,9 @@ class BitfinexBotApp {
 
             // 启动整体信息轮询
             this.startOverallInfoPolling();
+
+            // 启动全量刷新轮询（基于 MINUTES_RUN）
+            this.startFullRefreshPolling();
 
             // 监听币种切换事件
             document.addEventListener('currencyChanged', (e) => {
@@ -57,22 +67,117 @@ class BitfinexBotApp {
     updateConnectionStatus() {
         const statusElement = document.getElementById('bot-status');
         const iconElement = document.querySelector('#status-indicator i');
+        const timestampElement = document.getElementById('connection-timestamp');
 
         if (this.isConnected) {
             statusElement.textContent = '已连接';
             iconElement.className = 'bi bi-circle-fill text-success me-1';
+
+            // 更新时间戳
+            this.lastConnectionTime = new Date();
+            if (timestampElement) {
+                timestampElement.textContent = this.formatConnectionTime(this.lastConnectionTime);
+            }
         } else {
             statusElement.textContent = '连接失败';
             iconElement.className = 'bi bi-circle-fill text-danger me-1';
+            if (timestampElement) {
+                timestampElement.textContent = '';
+            }
+        }
+    }
+
+    // 格式化连接时间
+    formatConnectionTime(date) {
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+    }
+
+    // 显示加载指示器
+    showLoadingIndicator() {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'inline-block';
+        }
+    }
+
+    // 隐藏加载指示器
+    hideLoadingIndicator() {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+    }
+
+    // 更新倒计时显示
+    updateCountdown() {
+        const countdownElement = document.getElementById('refresh-countdown');
+        if (!countdownElement || !this.nextRefreshTime) return;
+
+        const now = Date.now();
+        const remaining = Math.max(0, this.nextRefreshTime - now);
+
+        if (remaining === 0) {
+            countdownElement.style.display = 'none';
+            return;
+        }
+
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+
+        countdownElement.textContent = `下次刷新: ${minutes}:${String(seconds).padStart(2, '0')}`;
+        countdownElement.style.display = 'inline';
+    }
+
+    // 启动倒计时
+    startCountdown() {
+        // 停止现有倒计时
+        if (this.countdownTimer) {
+            clearInterval(this.countdownTimer);
+        }
+
+        // 设置下次刷新时间
+        this.nextRefreshTime = Date.now() + this.fullRefreshInterval;
+
+        // 立即更新一次
+        this.updateCountdown();
+
+        // 每秒更新倒计时
+        this.countdownTimer = setInterval(() => {
+            this.updateCountdown();
+        }, 1000);
+
+        console.log('[APP] 倒计时已启动');
+    }
+
+    // 停止倒计时
+    stopCountdown() {
+        if (this.countdownTimer) {
+            clearInterval(this.countdownTimer);
+            this.countdownTimer = null;
+        }
+
+        const countdownElement = document.getElementById('refresh-countdown');
+        if (countdownElement) {
+            countdownElement.style.display = 'none';
         }
     }
 
     // 初始化币种
     async initializeCurrencies() {
         try {
+            this.showLoadingIndicator();
+
             // 获取配置
             const response = await api.getConfig();
             const config = response.data;
+
+            // 保存 MINUTES_RUN 配置
+            this.minutesRun = config.MINUTES_RUN || 5;
+            this.fullRefreshInterval = this.minutesRun * 60 * 1000;
+            console.log(`[APP] 全量刷新间隔设置为 ${this.minutesRun} 分钟`);
 
             // 获取启用的币种
             const currencies = [];
@@ -87,13 +192,20 @@ class BitfinexBotApp {
             if (currencies.length === 0) {
                 console.warn('[APP] 没有启用的币种');
                 alert('没有启用的币种，请检查配置');
+                this.hideLoadingIndicator();
                 return;
             }
 
             console.log('[APP] 启用的币种:', currencies);
 
+            // 保存币种列表
+            this.enabledCurrencies = currencies;
+
             // 初始化 TAB
             tabManager.initTabs(currencies);
+
+            // 预加载所有币种数据
+            await this.loadAllCurrenciesData();
 
             // 渲染第一个币种的面板
             await dashboard.render(currencies[0]);
@@ -104,9 +216,12 @@ class BitfinexBotApp {
             // 加载配置到配置管理器
             await configManager.loadConfig();
 
+            this.hideLoadingIndicator();
+
         } catch (error) {
             console.error('[APP] 初始化币种失败:', error);
             alert('初始化失败: ' + error.message);
+            this.hideLoadingIndicator();
         }
     }
 
@@ -114,10 +229,23 @@ class BitfinexBotApp {
     async onCurrencyChanged(currency) {
         console.log('[APP] 币种切换到:', currency);
 
+        // 检查连接状态
+        if (!this.isConnected) {
+            console.warn('[APP] 未连接，无法切换币种');
+            alert('连接已断开，请刷新页面重新连接');
+            return;
+        }
+
         try {
             await dashboard.render(currency);
         } catch (error) {
             console.error('[APP] 渲染币种面板失败:', error);
+            // 如果是连接错误，更新连接状态
+            if (error.message && error.message.includes('Failed to fetch')) {
+                this.isConnected = false;
+                this.updateConnectionStatus();
+                alert('连接已断开，请刷新页面重新连接');
+            }
         }
     }
 
@@ -203,6 +331,131 @@ class BitfinexBotApp {
         }
     }
 
+    // 启动全量刷新轮询
+    startFullRefreshPolling() {
+        if (this.fullRefreshTimer) {
+            clearInterval(this.fullRefreshTimer);
+        }
+
+        // 启动定时器
+        this.fullRefreshTimer = setInterval(() => {
+            this.performFullRefresh();
+        }, this.fullRefreshInterval);
+
+        // 启动倒计时
+        this.startCountdown();
+
+        console.log(`[APP] 全量刷新轮询已启动，间隔 ${this.minutesRun} 分钟`);
+    }
+
+    // 停止全量刷新轮询
+    stopFullRefreshPolling() {
+        if (this.fullRefreshTimer) {
+            clearInterval(this.fullRefreshTimer);
+            this.fullRefreshTimer = null;
+        }
+        this.stopCountdown();
+    }
+
+    // 执行全量刷新
+    async performFullRefresh() {
+        console.log('[APP] 开始全量刷新...');
+        this.showLoadingIndicator();
+        this.stopCountdown(); // 停止倒计时显示
+
+        try {
+            // 1. 重新检查连接状态
+            await this.checkConnection();
+
+            if (!this.isConnected) {
+                console.error('[APP] 连接失败，跳过数据刷新');
+                this.hideLoadingIndicator();
+                this.startCountdown(); // 重新启动倒计时
+                return;
+            }
+
+            // 2. 预加载所有币种数据
+            await this.loadAllCurrenciesData();
+
+            // 3. 刷新当前显示的币种
+            const currentCurrency = tabManager.activeCurrency;
+            if (currentCurrency) {
+                await dashboard.render(currentCurrency);
+            }
+
+            // 4. 刷新整体信息
+            await overallInfo.refreshData();
+
+            console.log('[APP] 全量刷新完成');
+            this.hideLoadingIndicator();
+            this.startCountdown(); // 重新启动倒计时
+        } catch (error) {
+            console.error('[APP] 全量刷新失败:', error);
+            this.hideLoadingIndicator();
+            this.startCountdown(); // 重新启动倒计时
+        }
+    }
+
+    // 预加载所有币种数据
+    async loadAllCurrenciesData() {
+        // 检查连接状态
+        if (!this.isConnected) {
+            console.warn('[APP] 未连接，跳过数据加载');
+            return;
+        }
+
+        if (!this.enabledCurrencies || this.enabledCurrencies.length === 0) {
+            console.warn('[APP] 没有启用的币种，跳过预加载');
+            return;
+        }
+
+        console.log('[APP] 开始预加载所有币种数据:', this.enabledCurrencies);
+
+        try {
+            // 并行获取所有币种的数据
+            const promises = this.enabledCurrencies.map(currency =>
+                this.loadCurrencyData(currency)
+            );
+
+            await Promise.all(promises);
+
+            console.log('[APP] 所有币种数据预加载完成');
+        } catch (error) {
+            console.error('[APP] 预加载币种数据失败:', error);
+            // 如果是连接错误，更新连接状态
+            if (error.message && error.message.includes('Failed to fetch')) {
+                this.isConnected = false;
+                this.updateConnectionStatus();
+            }
+        }
+    }
+
+    // 加载单个币种数据
+    async loadCurrencyData(currency) {
+        try {
+            console.log(`[APP] 预加载 ${currency} 数据`);
+
+            const [earnings, offers, credits, status] = await Promise.all([
+                api.getEarnings(`?currency=${currency}`),
+                api.getOffers(`?currency=${currency}`),
+                api.getFundingCredits(`?currency=${currency}`),
+                api.getStatus(`?currency=${currency}`)
+            ]);
+
+            // 缓存数据到 dashboard
+            dashboard.cacheData(currency, {
+                earnings: earnings.data,
+                offers: offers.data,
+                credits: credits.data,
+                status: status.data
+            });
+
+            console.log(`[APP] ${currency} 数据预加载完成`);
+        } catch (error) {
+            console.error(`[APP] 预加载 ${currency} 数据失败:`, error);
+        }
+    }
+
     // HTML 转义
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -214,6 +467,8 @@ class BitfinexBotApp {
     cleanup() {
         this.stopLogPolling();
         this.stopOverallInfoPolling();
+        this.stopFullRefreshPolling();
+        this.stopCountdown();
         dashboard.destroyAllCharts();
     }
 }

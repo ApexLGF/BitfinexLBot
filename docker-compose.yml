@@ -1,7 +1,7 @@
 services:
   bitfinex-bot:
     # 使用 Docker Hub 镜像（推荐生产环境）
-    image: apexlgf/bitfinexwebbot:v2.4.4  # 修复智能策略配置问题和Web界面优化
+    image: apexlgf/bitfinexwebbot:v2.5.0  # Web前端改进：连接状态增强与全币种数据刷新
 
     # 或者使用本地构建（开发环境）
     # build:
