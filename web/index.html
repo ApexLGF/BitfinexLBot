@@ -40,6 +40,20 @@
         </div>
     </nav>
 
+    <!-- 系统日志（全宽） -->
+    <div class="container-fluid px-3 mt-2">
+        <div class="card">
+            <div class="card-header py-2">
+                <i class="bi bi-terminal me-2"></i>系统日志
+            </div>
+            <div class="card-body p-0">
+                <div id="log-container" class="log-terminal">
+                    <!-- 日志内容将通过 JavaScript 动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container-fluid mt-3">
         <div class="row">
             <!-- 左侧面板 (70%) -->
@@ -82,7 +96,7 @@
                 </div>
 
                 <!-- 配置管理 -->
-                <div class="card mb-3">
+                <div class="card">
                     <div class="card-header">
                         <i class="bi bi-gear me-2"></i>配置管理
                     </div>
@@ -94,18 +108,6 @@
                         <button class="btn btn-outline-secondary w-100" data-bs-toggle="modal" data-bs-target="#config-modal">
                             <i class="bi bi-pencil-square me-1"></i>编辑配置
                         </button>
-                    </div>
-                </div>
-
-                <!-- 系统日志 -->
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-terminal me-2"></i>系统日志
-                    </div>
-                    <div class="card-body p-0">
-                        <div id="log-container" class="log-terminal">
-                            <!-- 日志内容将通过 JavaScript 动态生成 -->
-                        </div>
                     </div>
                 </div>
             </div>
@@ -132,6 +134,40 @@
                     <button type="button" class="btn btn-primary" id="save-config">
                         <i class="bi bi-save me-1"></i>保存配置
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 贷出挂单详情模态框 -->
+    <div class="modal fade" id="offers-detail-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-list-ul me-2"></i>贷出挂单详情
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="offers-detail-content">
+                    <!-- 内容动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 已贷出订单详情模态框 -->
+    <div class="modal fade" id="credits-detail-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-check-circle me-2"></i>已贷出订单详情
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="credits-detail-content">
+                    <!-- 内容动态生成 -->
                 </div>
             </div>
         </div>

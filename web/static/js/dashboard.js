@@ -233,66 +233,135 @@ class CurrencyDashboard {
         });
     }
 
-    // 更新贷出挂单部分
+    // 更新贷出挂单部分（只更新统计数据，不加载表格）
     updateOffersSection(currency, offers) {
         // 更新统计数据
         const count = offers.length;
         const total = offers.reduce((sum, o) => sum + o.amount, 0);
         const avgRate = count > 0 ? offers.reduce((sum, o) => sum + o.rate, 0) / count : 0;
 
-        document.getElementById(`offers-count-${currency}`).textContent = count;
-        document.getElementById(`offers-total-${currency}`).textContent = total.toFixed(2);
-        document.getElementById(`offers-rate-${currency}`).textContent = (avgRate * 100).toFixed(4);
+        const countEl = document.getElementById(`offers-count-${currency}`);
+        const totalEl = document.getElementById(`offers-total-${currency}`);
+        const rateEl = document.getElementById(`offers-rate-${currency}`);
 
-        // 更新表格
-        const tbody = document.querySelector(`#offers-table-${currency} tbody`);
-        if (!tbody) return;
-
-        if (offers.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无数据</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = offers.map(offer => `
-            <tr>
-                <td>${offer.id}</td>
-                <td>${offer.amount.toFixed(2)}</td>
-                <td>${(offer.rate * 100).toFixed(4)}</td>
-                <td>${offer.period}天</td>
-                <td><span class="badge bg-success">活跃</span></td>
-                <td>${new Date(offer.created).toLocaleString('zh-CN')}</td>
-            </tr>
-        `).join('');
+        if (countEl) countEl.textContent = count;
+        if (totalEl) totalEl.textContent = total.toFixed(2);
+        if (rateEl) rateEl.textContent = (avgRate * 100).toFixed(4);
     }
 
-    // 更新已贷出订单部分
+    // 更新已贷出订单部分（只更新统计数据，不加载表格）
     updateCreditsSection(currency, creditsData) {
-        const credits = creditsData.credits || [];
+        const countEl = document.getElementById(`credits-count-${currency}`);
+        const totalEl = document.getElementById(`credits-total-${currency}`);
+        const rateEl = document.getElementById(`credits-rate-${currency}`);
 
-        // 更新统计数据
-        document.getElementById(`credits-count-${currency}`).textContent = creditsData.total_count || 0;
-        document.getElementById(`credits-total-${currency}`).textContent = (creditsData.total_amount || 0).toFixed(2);
-        document.getElementById(`credits-rate-${currency}`).textContent = ((creditsData.avg_rate || 0) * 100).toFixed(4);
+        if (countEl) countEl.textContent = creditsData.total_count || 0;
+        if (totalEl) totalEl.textContent = (creditsData.total_amount || 0).toFixed(2);
+        if (rateEl) rateEl.textContent = ((creditsData.avg_rate || 0) * 100).toFixed(4);
+    }
 
-        // 更新表格
-        const tbody = document.querySelector(`#credits-table-${currency} tbody`);
-        if (!tbody) return;
+    // 显示贷出挂单详情（点击按钮时才加载数据）
+    async showOffersDetail(currency) {
+        const content = document.getElementById('offers-detail-content');
+        content.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>加载中...</div>';
 
-        if (credits.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无数据</td></tr>';
-            return;
+        // 打开模态框
+        const modal = new bootstrap.Modal(document.getElementById('offers-detail-modal'));
+        modal.show();
+
+        try {
+            // 点击时才从 API 加载数据
+            const response = await api.getOffers(`?currency=${currency}`);
+            const offers = response.data || [];
+
+            if (offers.length === 0) {
+                content.innerHTML = '<div class="text-center text-muted py-3">暂无挂单数据</div>';
+            } else {
+                content.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>金额</th>
+                                    <th>利率</th>
+                                    <th>期间</th>
+                                    <th>状态</th>
+                                    <th>创建时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${offers.map(offer => `
+                                    <tr>
+                                        <td>${offer.id}</td>
+                                        <td>${offer.amount.toFixed(2)}</td>
+                                        <td>${(offer.rate * 100).toFixed(4)}%</td>
+                                        <td>${offer.period}天</td>
+                                        <td><span class="badge bg-success">活跃</span></td>
+                                        <td>${new Date(offer.created).toLocaleString('zh-CN')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('[Dashboard] 加载挂单详情失败:', error);
+            content.innerHTML = '<div class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle me-1"></i>加载失败</div>';
         }
+    }
 
-        tbody.innerHTML = credits.map(credit => `
-            <tr>
-                <td>${credit.id}</td>
-                <td>${credit.amount.toFixed(2)}</td>
-                <td>${(credit.rate * 100).toFixed(4)}</td>
-                <td>${credit.period}天</td>
-                <td><span class="badge bg-info">${credit.status}</span></td>
-                <td>${new Date(credit.opened).toLocaleString('zh-CN')}</td>
-            </tr>
-        `).join('');
+    // 显示已贷出订单详情（点击按钮时才加载数据）
+    async showCreditsDetail(currency) {
+        const content = document.getElementById('credits-detail-content');
+        content.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm me-2"></span>加载中...</div>';
+
+        // 打开模态框
+        const modal = new bootstrap.Modal(document.getElementById('credits-detail-modal'));
+        modal.show();
+
+        try {
+            // 点击时才从 API 加载数据
+            const response = await api.getFundingCredits(`?currency=${currency}`);
+            const credits = response.data?.credits || [];
+
+            if (credits.length === 0) {
+                content.innerHTML = '<div class="text-center text-muted py-3">暂无已贷出订单</div>';
+            } else {
+                content.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>金额</th>
+                                    <th>利率</th>
+                                    <th>期间</th>
+                                    <th>状态</th>
+                                    <th>开始时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${credits.map(credit => `
+                                    <tr>
+                                        <td>${credit.id}</td>
+                                        <td>${credit.amount.toFixed(2)}</td>
+                                        <td>${(credit.rate * 100).toFixed(4)}%</td>
+                                        <td>${credit.period}天</td>
+                                        <td><span class="badge bg-info">${credit.status}</span></td>
+                                        <td>${new Date(credit.opened).toLocaleString('zh-CN')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('[Dashboard] 加载已贷出订单详情失败:', error);
+            content.innerHTML = '<div class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle me-1"></i>加载失败</div>';
+        }
     }
 
     // 销毁所有图表

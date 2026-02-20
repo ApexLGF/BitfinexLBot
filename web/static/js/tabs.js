@@ -124,7 +124,7 @@ class CurrencyTabManager {
                 <div class="card-header">
                     <i class="bi bi-graph-up me-2"></i>30日收益趋势
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="height: 450px;">
                     <canvas id="earnings-chart-${currency}"></canvas>
                 </div>
             </div>
@@ -133,31 +133,15 @@ class CurrencyTabManager {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-list-ul me-2"></i>贷出挂单</span>
-                    <div class="stats-badges">
-                        <span class="badge bg-primary">数量: <span id="offers-count-${currency}">0</span></span>
-                        <span class="badge bg-success">总额: <span id="offers-total-${currency}">0</span></span>
-                        <span class="badge bg-info">平均利率: <span id="offers-rate-${currency}">0</span></span>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover" id="offers-table-${currency}">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>金额</th>
-                                    <th>利率</th>
-                                    <th>期间</th>
-                                    <th>状态</th>
-                                    <th>创建时间</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td colspan="6" class="text-center text-muted">暂无数据</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div class="d-flex align-items-center">
+                        <div class="stats-badges me-2">
+                            <span class="badge bg-primary">数量: <span id="offers-count-${currency}">0</span></span>
+                            <span class="badge bg-success">总额: <span id="offers-total-${currency}">0</span></span>
+                            <span class="badge bg-info">平均利率: <span id="offers-rate-${currency}">0</span></span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="dashboard.showOffersDetail('${currency}')">
+                            <i class="bi bi-eye me-1"></i>查看详情
+                        </button>
                     </div>
                 </div>
             </div>
@@ -166,31 +150,15 @@ class CurrencyTabManager {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-check-circle me-2"></i>已贷出订单</span>
-                    <div class="stats-badges">
-                        <span class="badge bg-primary">数量: <span id="credits-count-${currency}">0</span></span>
-                        <span class="badge bg-success">总额: <span id="credits-total-${currency}">0</span></span>
-                        <span class="badge bg-info">平均利率: <span id="credits-rate-${currency}">0</span></span>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover" id="credits-table-${currency}">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>金额</th>
-                                    <th>利率</th>
-                                    <th>期间</th>
-                                    <th>状态</th>
-                                    <th>开始时间</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td colspan="6" class="text-center text-muted">暂无数据</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div class="d-flex align-items-center">
+                        <div class="stats-badges me-2">
+                            <span class="badge bg-primary">数量: <span id="credits-count-${currency}">0</span></span>
+                            <span class="badge bg-success">总额: <span id="credits-total-${currency}">0</span></span>
+                            <span class="badge bg-info">平均利率: <span id="credits-rate-${currency}">0</span></span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="dashboard.showCreditsDetail('${currency}')">
+                            <i class="bi bi-eye me-1"></i>查看详情
+                        </button>
                     </div>
                 </div>
             </div>
