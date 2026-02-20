@@ -16,7 +16,7 @@ func abs(x float64) float64 {
 func TestSmartStrategy_CalculateOptimalAllocation(t *testing.T) {
 	strategy := NewSmartStrategy(&config.Config{
 		VolatilityThreshold: 0.002,
-	})
+	}, &config.CurrencyConfig{})
 
 	tests := []struct {
 		name             string
@@ -95,7 +95,7 @@ func TestSmartStrategy_CalculateProgressiveRate(t *testing.T) {
 	strategy := NewSmartStrategy(&config.Config{
 		MaxRateMultiplier: 2.0,
 		MinRateMultiplier: 0.8,
-	})
+	}, &config.CurrencyConfig{})
 
 	condition := &MarketCondition{
 		Trend:      "stable",
@@ -125,14 +125,14 @@ func TestSmartStrategy_CalculateProgressiveRate(t *testing.T) {
 			name: "with funding book data",
 			fundingBook: []*bitfinex.FundingBookEntry{
 				{Rate: 0.0003, Amount: 1000},
-				{Rate: 0.0005, Amount: 2000},
-				{Rate: 0.0007, Amount: 1500},
+				{Rate: 0.0010, Amount: 2000}, // 利率差距 > 0.001
+				{Rate: 0.0017, Amount: 1500},
 			},
 			minDailyRate: 0.0002,
 			orderIndex:   1,
 			totalOrders:  3,
 			expectMin:    0.0003,
-			expectMax:    0.0007,
+			expectMax:    0.0017,
 		},
 		{
 			name: "rates below minimum",
@@ -167,7 +167,10 @@ func TestSmartStrategy_CalculateSmartPeriod(t *testing.T) {
 		OneTwentyDayLendRateThreshold: 0.045,
 		VolatilityThreshold:           0.002,
 	}
-	strategy := NewSmartStrategy(cfg)
+	strategy := NewSmartStrategy(cfg, &config.CurrencyConfig{
+		ThirtyDayLendRateThreshold:    0.04,
+		OneTwentyDayLendRateThreshold: 0.045,
+	})
 
 	tests := []struct {
 		name      string
@@ -253,7 +256,18 @@ func TestSmartStrategy_CalculateSmartOffers(t *testing.T) {
 		MaxRateMultiplier:             2.0,
 		MinRateMultiplier:             0.8,
 	}
-	strategy := NewSmartStrategy(cfg)
+	currencyCfg := &config.CurrencyConfig{
+		MinLoan:                       150.0,
+		MaxLoan:                       1000.0,
+		SpreadLend:                    3,
+		HighHoldAmount:                500.0,
+		HighHoldOrders:                1,
+		HighHoldRate:                  0.1,
+		MinDailyLendRate:              0.02,
+		ThirtyDayLendRateThreshold:    0.04,
+		OneTwentyDayLendRateThreshold: 0.045,
+	}
+	strategy := NewSmartStrategy(cfg, currencyCfg)
 
 	fundingBook := []*bitfinex.FundingBookEntry{
 		{Rate: 0.0003, Amount: 1000},

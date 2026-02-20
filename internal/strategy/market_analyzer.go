@@ -212,3 +212,29 @@ func (ma *MarketAnalyzer) GetOptimalDepthRange(fundsAvailable float64, condition
 
 	return baseBottom, baseTop
 }
+
+// GetRateHistory 獲取利率歷史數據（用於 LLM 策略）
+func (ma *MarketAnalyzer) GetRateHistory() []RateSnapshot {
+	return ma.rateHistory
+}
+
+// AddRateSnapshotWithTime 添加指定時間的利率快照（用於回測）
+func (ma *MarketAnalyzer) AddRateSnapshotWithTime(rate float64, volume float64, timestamp time.Time) {
+	snapshot := RateSnapshot{
+		Rate:      rate,
+		Timestamp: timestamp,
+		Volume:    volume,
+	}
+
+	ma.rateHistory = append(ma.rateHistory, snapshot)
+
+	// 保持歷史數據大小限制
+	if len(ma.rateHistory) > ma.maxHistorySize {
+		ma.rateHistory = ma.rateHistory[1:]
+	}
+}
+
+// ClearHistory 清空歷史數據（用於回測重置）
+func (ma *MarketAnalyzer) ClearHistory() {
+	ma.rateHistory = make([]RateSnapshot, 0)
+}

@@ -1,28 +1,49 @@
 package strategy
 
 import (
+	"fmt"
 	"log"
 	"math"
+	"sync"
+	"time"
 
 	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 	"github.com/ApexLGF/BitfinexLBot/internal/config"
 	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 )
 
+// LLMPredictionCache LLM 預測緩存
+type LLMPredictionCache struct {
+	prediction *LLMPrediction
+	timestamp  time.Time
+	mu         sync.RWMutex
+}
+
 // SmartStrategy 智能策略引擎
 type SmartStrategy struct {
 	config         *config.Config
 	currencyConfig *config.CurrencyConfig
 	analyzer       *MarketAnalyzer
+	llmStrategy    *LLMAIStrategy      // LLM AI 策略
+	llmCache       *LLMPredictionCache // LLM 預測緩存
 }
 
 // NewSmartStrategy 創建智能策略引擎
 func NewSmartStrategy(cfg *config.Config, currencyConfig *config.CurrencyConfig) *SmartStrategy {
-	return &SmartStrategy{
+	analyzer := NewMarketAnalyzer()
+	ss := &SmartStrategy{
 		config:         cfg,
 		currencyConfig: currencyConfig,
-		analyzer:       NewMarketAnalyzer(),
+		analyzer:       analyzer,
+		llmCache:       &LLMPredictionCache{},
 	}
+
+	// 如果啟用 LLM 策略且配置了 API Key，初始化 LLM 策略
+	if cfg.EnableLLMStrategy && cfg.OpenAIAPIKey != "" {
+		ss.llmStrategy = NewLLMAIStrategy(cfg, analyzer)
+	}
+
+	return ss
 }
 
 // CalculateSmartOffers 計算智能貸出訂單
@@ -282,7 +303,7 @@ func (ss *SmartStrategy) calculateSmartSpreadOffers(splitFundsAvailable float64,
 }
 
 // calculateSmartRate 計算智能利率
-func (ss *SmartStrategy) calculateSmartRate(depthIndex int, fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int) float64 {
+func (ss *SmartStrategy) calculateSmartRate(depthIndex int, fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int, totalOrders int) float64 {
 	var rate float64
 
 	if len(fundingBook) > 0 && depthIndex < len(fundingBook) {
@@ -306,8 +327,8 @@ func (ss *SmartStrategy) calculateSmartRate(depthIndex int, fundingBook []*bitfi
 		log.Printf("市場數據利率計算 - 深度索引: %d, 市場利率: %.6f%%, 最終利率: %.6f%%",
 			depthIndex, fundingBook[depthIndex].Rate*100, rate*100)
 	} else {
-		// 深度超出範圍時，使用合成利率
-		rate = ss.calculateSyntheticRate(depthIndex, minDailyRate, condition)
+		// 深度超出範圍時，使用 LLM 預測利率或合成利率
+		rate = ss.getLLMPredictedRate(fundingBook, minDailyRate, condition, orderIndex, totalOrders)
 	}
 
 	// 根據市場趨勢微調
@@ -326,8 +347,8 @@ func (ss *SmartStrategy) calculateSmartRate(depthIndex int, fundingBook []*bitfi
 // calculateProgressiveRate 計算遞增利率序列
 func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int, totalOrders int) float64 {
 	if len(fundingBook) == 0 {
-		// 無市場數據時使用合成利率
-		return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+		// 無市場數據時使用 LLM 預測利率或合成利率
+		return ss.getLLMPredictedRate(fundingBook, minDailyRate, condition, orderIndex, totalOrders)
 	}
 
 	// 分析 funding book 中的利率分佈
@@ -340,11 +361,8 @@ func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.Fundin
 
 	// 检查是否有有效利率数据
 	if len(rates) == 0 {
-		// 沒有符合最小利率的數據，使用合成利率
-		baseRate := minDailyRate
-		increment := baseRate * ss.config.RateRangeIncreasePercent * float64(orderIndex)
-		log.Printf("无符合条件的利率，使用合成利率: %.6f%%", (baseRate+increment)*100)
-		return baseRate + increment
+		// 沒有符合最小利率的數據，使用 LLM 預測利率或合成利率
+		return ss.getLLMPredictedRate(fundingBook, minDailyRate, condition, orderIndex, totalOrders)
 	}
 
 	// 找出利率範圍
@@ -359,12 +377,9 @@ func (ss *SmartStrategy) calculateProgressiveRate(fundingBook []*bitfinex.Fundin
 		}
 	}
 
-	if (maxRate-minRate) < 0.001 {
-		// 沒有符合最小利率的數據，使用合成利率
-		baseRate := minDailyRate
-		increment := baseRate * ss.config.RateRangeIncreasePercent * float64(orderIndex)
-		log.Printf("funding中利率差距小于 0.1%%，使用合成利率: %.6f%%", (baseRate+increment)*100)
-		return baseRate + increment
+	if (maxRate - minRate) < 0.001 {
+		// 利率差距過小，使用 LLM 預測利率或合成利率
+		return ss.getLLMPredictedRate(fundingBook, minDailyRate, condition, orderIndex, totalOrders)
 	}
 
 	log.Printf("Funding Book 利率分析 - 有效利率數量: %d, 原始範圍: %.6f%%-%.6f%%",
@@ -494,4 +509,103 @@ func (ss *SmartStrategy) calculateTotalVolume(fundingBook []*bitfinex.FundingBoo
 	}
 
 	return totalVolume
+}
+
+// getLLMPredictedRate 獲取 LLM 預測利率（帶緩存和重試機制）
+func (ss *SmartStrategy) getLLMPredictedRate(fundingBook []*bitfinex.FundingBookEntry, minDailyRate float64, condition *MarketCondition, orderIndex int, totalOrders int) float64 {
+	// 1. 檢查是否啟用 LLM 策略，並打印原因
+	if !ss.config.EnableLLMStrategy {
+		log.Printf("LLM 策略未啟用 (ENABLE_LLM_STRATEGY=false)，使用合成利率")
+		return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+	}
+	if ss.config.OpenAIAPIKey == "" {
+		log.Printf("OpenAI API Key 未配置，使用合成利率")
+		return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+	}
+	if ss.llmStrategy == nil {
+		log.Printf("LLM 策略未初始化，使用合成利率")
+		return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+	}
+
+	// 2. 檢查緩存是否有效
+	if !ss.isLLMCacheValid() {
+		if err := ss.refreshLLMPrediction(fundingBook); err != nil {
+			log.Printf("LLM 預測失敗，使用合成利率: %v", err)
+			return ss.calculateSyntheticRate(orderIndex, minDailyRate, condition)
+		}
+	}
+
+	// 3. 從緩存的預測中計算利率（將百分比轉換為小數）
+	ss.llmCache.mu.RLock()
+	prediction := ss.llmCache.prediction
+	cacheTime := ss.llmCache.timestamp
+	ss.llmCache.mu.RUnlock()
+
+	// 根據訂單索引在預測範圍內插值
+	var rate float64
+	if totalOrders > 1 {
+		rateRange := prediction.PredictedRateHigh - prediction.PredictedRateLow
+		step := rateRange / float64(totalOrders-1)
+		rate = (prediction.PredictedRateLow + step*float64(orderIndex)) / 100.0
+	} else {
+		rate = prediction.PredictedRateMid / 100.0
+	}
+
+	// 確保不低於最小利率
+	if rate < minDailyRate {
+		rate = minDailyRate
+	}
+
+	// 4. 打印 LLM 預測日誌
+	log.Printf("LLM 預測利率 - 訂單索引: %d, 利率: %.6f%%, 預測時間: %s, 置信度: %.0f%%",
+		orderIndex, rate*100, cacheTime.Format("15:04:05"), prediction.Confidence*100)
+
+	return rate
+}
+
+// refreshLLMPrediction 刷新 LLM 預測（帶重試機制）
+func (ss *SmartStrategy) refreshLLMPrediction(fundingBook []*bitfinex.FundingBookEntry) error {
+	maxRetries := ss.config.LLMMaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		prediction, err := ss.llmStrategy.Predict(
+			LLMStrategyType(ss.config.LLMDefaultStrategy),
+			fundingBook,
+		)
+		if err == nil {
+			ss.llmCache.mu.Lock()
+			ss.llmCache.prediction = prediction
+			ss.llmCache.timestamp = time.Now()
+			ss.llmCache.mu.Unlock()
+
+			log.Printf("LLM 預測成功 - 利率範圍: %.4f%%-%.4f%%, 趨勢: %s",
+				prediction.PredictedRateLow, prediction.PredictedRateHigh, prediction.Trend)
+			return nil
+		}
+		lastErr = err
+		log.Printf("LLM 預測第 %d 次嘗試失敗: %v", i+1, err)
+	}
+
+	return fmt.Errorf("LLM 預測 %d 次嘗試均失敗: %w", maxRetries, lastErr)
+}
+
+// isLLMCacheValid 檢查 LLM 緩存是否有效
+func (ss *SmartStrategy) isLLMCacheValid() bool {
+	ss.llmCache.mu.RLock()
+	defer ss.llmCache.mu.RUnlock()
+
+	if ss.llmCache.prediction == nil {
+		return false
+	}
+
+	cacheHours := ss.config.LLMCacheHours
+	if cacheHours <= 0 {
+		cacheHours = 3 // 預設 3 小時
+	}
+
+	return time.Since(ss.llmCache.timestamp) < time.Duration(cacheHours)*time.Hour
 }

@@ -91,6 +91,16 @@ type Config struct {
 	// 借貸通知設定
 	LastLendingCheckTime int64 // 上次檢查借貸訂單的時間戳
 	LendingCheckMinutes  int   `mapstructure:"LENDING_CHECK_MINUTES"` // 借貸訂單檢查間隔（分鐘）
+
+	// LLM AI 策略配置
+	OpenAIAPIKey       string `mapstructure:"OPENAI_API_KEY"`        // OpenAI API Key
+	OpenAIModel        string `mapstructure:"OPENAI_MODEL"`          // 模型名稱，預設 gpt-4o
+	OpenAIBaseURL      string `mapstructure:"OPENAI_BASE_URL"`       // API Base URL，預設 https://api.openai.com/v1
+	LLMDefaultStrategy int    `mapstructure:"LLM_DEFAULT_STRATEGY"`  // 預設策略類型 1/2/3
+	LLMTimeoutSeconds  int    `mapstructure:"LLM_TIMEOUT_SECONDS"`   // API 超時時間（秒）
+	EnableLLMStrategy  bool   `mapstructure:"ENABLE_LLM_STRATEGY"`   // 是否啟用 LLM 策略替代合成利率
+	LLMCacheHours      int    `mapstructure:"LLM_CACHE_HOURS"`       // LLM 預測緩存時間（小時），預設 3
+	LLMMaxRetries      int    `mapstructure:"LLM_MAX_RETRIES"`       // LLM 調用最大重試次數，預設 3
 }
 
 // LoadConfig 從文件加載配置
@@ -127,6 +137,9 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// 設置API配置的預設值
 	config.setAPIDefaults()
+
+	// 設置LLM配置的預設值
+	config.setLLMDefaults()
 
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -325,20 +338,42 @@ func (c *Config) setAPIDefaults() {
 	if !c.APIEnabled {
 		c.APIEnabled = true
 	}
-	
+
 	// 預設端口8090（內部服務端口）
 	if c.APIPort == 0 {
 		c.APIPort = 8090
 	}
-	
+
 	// 預設綁定所有地址
 	if c.APIHost == "" {
 		c.APIHost = "0.0.0.0"
 	}
-	
+
 	// 預設CORS設置
 	if len(c.APICorsOrigins) == 0 {
 		c.APICorsOrigins = []string{"*"}
+	}
+}
+
+// setLLMDefaults 設置LLM配置的預設值
+func (c *Config) setLLMDefaults() {
+	if c.OpenAIModel == "" {
+		c.OpenAIModel = "gpt-4o"
+	}
+	if c.OpenAIBaseURL == "" {
+		c.OpenAIBaseURL = "https://api.openai.com/v1"
+	}
+	if c.LLMDefaultStrategy == 0 {
+		c.LLMDefaultStrategy = 1
+	}
+	if c.LLMTimeoutSeconds == 0 {
+		c.LLMTimeoutSeconds = 30
+	}
+	if c.LLMCacheHours == 0 {
+		c.LLMCacheHours = 3 // 預設 3 小時緩存
+	}
+	if c.LLMMaxRetries == 0 {
+		c.LLMMaxRetries = 3 // 預設 3 次重試
 	}
 }
 
