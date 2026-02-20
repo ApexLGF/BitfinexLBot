@@ -189,16 +189,17 @@ func TestSmartStrategyLLMWithCachedPrediction(t *testing.T) {
 	}
 }
 
-// TestSmartStrategyLLMMinRateEnforcement 測試最小利率強制執行
+// TestSmartStrategyLLMMinRateEnforcement 測試最小利率強制執行時的遞增行為
 func TestSmartStrategyLLMMinRateEnforcement(t *testing.T) {
 	cfg := &config.Config{
-		EnableLLMStrategy:   true,
-		OpenAIAPIKey:        "test-key",
-		LLMCacheHours:       3,
-		LLMMaxRetries:       3,
-		VolatilityThreshold: 0.002,
-		MaxRateMultiplier:   2.0,
-		MinRateMultiplier:   0.8,
+		EnableLLMStrategy:        true,
+		OpenAIAPIKey:             "test-key",
+		LLMCacheHours:            3,
+		LLMMaxRetries:            3,
+		VolatilityThreshold:      0.002,
+		MaxRateMultiplier:        2.0,
+		MinRateMultiplier:        0.8,
+		RateRangeIncreasePercent: 0.1, // 10% 遞增範圍
 	}
 	currencyCfg := &config.CurrencyConfig{
 		MinLoan: 150.0,
@@ -206,11 +207,11 @@ func TestSmartStrategyLLMMinRateEnforcement(t *testing.T) {
 
 	strategy := NewSmartStrategy(cfg, currencyCfg)
 
-	// 設置一個很低的預測利率
+	// 設置一個很低的預測利率（低於最小利率）
 	strategy.llmCache.prediction = &LLMPrediction{
 		PredictedRateLow:  0.001, // 0.001%
 		PredictedRateMid:  0.002,
-		PredictedRateHigh: 0.003,
+		PredictedRateHigh: 0.003, // 0.003% 仍低於最小利率 0.05%
 		Confidence:        0.75,
 		Trend:             "stable",
 	}
@@ -225,17 +226,38 @@ func TestSmartStrategyLLMMinRateEnforcement(t *testing.T) {
 	// 設置一個較高的最小利率
 	minDailyRate := 0.0005 // 0.05%
 
-	rate := strategy.getLLMPredictedRate(
+	// 測試第一個訂單
+	rate0 := strategy.getLLMPredictedRate(
 		[]*bitfinex.FundingBookEntry{},
 		minDailyRate,
 		condition,
-		0,
+		0, // 第一個訂單
+		3, // 總共 3 個訂單
+	)
+
+	// 第一個訂單應該等於最小利率
+	if rate0 < minDailyRate*0.99 || rate0 > minDailyRate*1.01 {
+		t.Errorf("第一個訂單利率應該接近最小利率 %.6f，但得到: %.6f", minDailyRate, rate0)
+	}
+
+	// 測試最後一個訂單
+	rate2 := strategy.getLLMPredictedRate(
+		[]*bitfinex.FundingBookEntry{},
+		minDailyRate,
+		condition,
+		2, // 最後一個訂單
 		3,
 	)
 
-	// 利率應該不低於最小利率
-	if rate < minDailyRate {
-		t.Errorf("利率 %.6f 不應該低於最小利率 %.6f", rate, minDailyRate)
+	// 最後一個訂單應該高於第一個訂單（遞增）
+	if rate2 <= rate0 {
+		t.Errorf("最後一個訂單利率 %.6f 應該高於第一個訂單利率 %.6f", rate2, rate0)
+	}
+
+	// 最後一個訂單應該接近 minDailyRate * (1 + RateRangeIncreasePercent)
+	expectedMaxRate := minDailyRate * (1.0 + cfg.RateRangeIncreasePercent)
+	if rate2 < expectedMaxRate*0.99 || rate2 > expectedMaxRate*1.01 {
+		t.Errorf("最後一個訂單利率應該接近 %.6f，但得到: %.6f", expectedMaxRate, rate2)
 	}
 }
 

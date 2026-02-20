@@ -543,22 +543,44 @@ func (ss *SmartStrategy) getLLMPredictedRate(fundingBook []*bitfinex.FundingBook
 
 	// 根據訂單索引在預測範圍內插值
 	var rate float64
-	if totalOrders > 1 {
-		rateRange := prediction.PredictedRateHigh - prediction.PredictedRateLow
-		step := rateRange / float64(totalOrders-1)
-		rate = (prediction.PredictedRateLow + step*float64(orderIndex)) / 100.0
+	predictedLow := prediction.PredictedRateLow / 100.0
+	predictedHigh := prediction.PredictedRateHigh / 100.0
+
+	// 如果預測的利率範圍都低於最小利率，則以最小利率為基礎創建遞增序列
+	if predictedHigh < minDailyRate {
+		// 使用最小利率作為基礎，創建遞增範圍
+		baseRate := minDailyRate
+		// 使用配置的利率範圍增加百分比創建遞增
+		maxRate := minDailyRate * (1.0 + ss.config.RateRangeIncreasePercent)
+		if totalOrders > 1 {
+			rateRange := maxRate - baseRate
+			step := rateRange / float64(totalOrders-1)
+			rate = baseRate + step*float64(orderIndex)
+		} else {
+			rate = baseRate
+		}
+		log.Printf("LLM 預測利率低於最小利率，使用最小利率遞增 - 訂單索引: %d, 利率: %.6f%%, 預測時間: %s",
+			orderIndex, rate*100, cacheTime.Format("15:04:05"))
 	} else {
-		rate = prediction.PredictedRateMid / 100.0
-	}
+		// 正常情況：使用 LLM 預測的利率範圍
+		// 如果預測的最低利率低於最小利率，調整範圍
+		if predictedLow < minDailyRate {
+			predictedLow = minDailyRate
+		}
 
-	// 確保不低於最小利率
-	if rate < minDailyRate {
-		rate = minDailyRate
+		if totalOrders > 1 {
+			rateRange := predictedHigh - predictedLow
+			step := rateRange / float64(totalOrders-1)
+			rate = predictedLow + step*float64(orderIndex)
+		} else {
+			rate = prediction.PredictedRateMid / 100.0
+			if rate < minDailyRate {
+				rate = minDailyRate
+			}
+		}
+		log.Printf("LLM 預測利率 - 訂單索引: %d, 利率: %.6f%%, 預測時間: %s, 置信度: %.0f%%",
+			orderIndex, rate*100, cacheTime.Format("15:04:05"), prediction.Confidence*100)
 	}
-
-	// 4. 打印 LLM 預測日誌
-	log.Printf("LLM 預測利率 - 訂單索引: %d, 利率: %.6f%%, 預測時間: %s, 置信度: %.0f%%",
-		orderIndex, rate*100, cacheTime.Format("15:04:05"), prediction.Confidence*100)
 
 	return rate
 }
