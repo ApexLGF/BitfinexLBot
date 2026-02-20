@@ -25,6 +25,34 @@ class OverallInfoPanel {
         }
     }
 
+    // 只刷新 FRR 利率（快速）
+    async refreshFRROnly() {
+        console.log('[OverallInfo] 刷新 FRR 利率');
+
+        try {
+            const frrRates = await api.get('/frr-rates');
+            this.updateFRRRates(frrRates.data);
+            console.log('[OverallInfo] FRR 利率刷新完成');
+        } catch (error) {
+            console.error('[OverallInfo] FRR 刷新失败:', error);
+            this.frrContainer.innerHTML = '<div class="text-center text-danger py-2"><i class="bi bi-exclamation-triangle me-1"></i>加载失败</div>';
+        }
+    }
+
+    // 只刷新年度收益（慢，延迟加载）
+    async refreshYearlyOnly() {
+        console.log('[OverallInfo] 刷新年度收益');
+
+        try {
+            const yearlyEarnings = await api.get('/earnings/yearly');
+            this.updateYearlyEarnings(yearlyEarnings.data);
+            console.log('[OverallInfo] 年度收益刷新完成');
+        } catch (error) {
+            console.error('[OverallInfo] 年度收益刷新失败:', error);
+            this.earningsContainer.innerHTML = '<div class="text-center text-danger py-2"><i class="bi bi-exclamation-triangle me-1"></i>加载失败</div>';
+        }
+    }
+
     // 更新 FRR 利率
     updateFRRRates(rates) {
         if (!rates || Object.keys(rates).length === 0) {

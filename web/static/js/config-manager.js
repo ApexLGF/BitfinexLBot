@@ -33,6 +33,15 @@ class ConfigManager {
         }
     }
 
+    // 使用已有配置初始化（避免重复请求）
+    initWithConfig(config) {
+        console.log('[ConfigManager] 使用缓存配置初始化');
+        this.currentConfig = config;
+        this.renderConfigForm(config);
+        this.displayMinRates(config);
+        console.log('[ConfigManager] 配置初始化完成');
+    }
+
     // 显示最小利率
     displayMinRates(config) {
         if (!this.minRatesContainer) return;

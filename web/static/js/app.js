@@ -198,31 +198,68 @@ class BitfinexBotApp {
 
             console.log('[APP] 启用的币种:', currencies);
 
-            // 保存币种列表
+            // 保存币种列表和配置（供 configManager 使用，避免重复请求）
             this.enabledCurrencies = currencies;
+            this.cachedConfig = config;
 
             // 初始化 TAB
             tabManager.initTabs(currencies);
 
-            // 预加载所有币种数据
-            await this.loadAllCurrenciesData();
+            // 优化：只加载第一个币种的数据，其他币种延迟加载
+            const firstCurrency = currencies[0];
+            console.log(`[APP] 优先加载第一个币种: ${firstCurrency}`);
 
-            // 渲染第一个币种的面板
-            await dashboard.render(currencies[0]);
+            // 并行执行：加载第一个币种数据 + FRR 利率（年度收益延迟加载）
+            const [firstCurrencyData] = await Promise.all([
+                this.loadCurrencyData(firstCurrency),
+                overallInfo.refreshFRROnly() // 只加载 FRR，年度收益延迟
+            ]);
 
-            // 加载整体信息
-            await overallInfo.refreshData();
+            // 渲染第一个币种的面板（使用已缓存的数据）
+            await dashboard.render(firstCurrency);
 
-            // 加载配置到配置管理器
-            await configManager.loadConfig();
+            // 使用已缓存的配置初始化配置管理器（避免重复请求）
+            configManager.initWithConfig(config);
 
             this.hideLoadingIndicator();
+
+            // 延迟加载：其他币种数据和年度收益（不阻塞页面显示）
+            this.loadRemainingDataInBackground(currencies);
 
         } catch (error) {
             console.error('[APP] 初始化币种失败:', error);
             alert('初始化失败: ' + error.message);
             this.hideLoadingIndicator();
         }
+    }
+
+    // 后台加载剩余数据
+    async loadRemainingDataInBackground(currencies) {
+        console.log('[APP] 开始后台加载剩余数据...');
+
+        // 延迟 500ms 后开始加载，让页面先渲染完成
+        setTimeout(async () => {
+            try {
+                // 1. 加载其他币种数据（如果有多个币种）
+                if (currencies.length > 1) {
+                    const otherCurrencies = currencies.slice(1);
+                    console.log('[APP] 后台加载其他币种:', otherCurrencies);
+
+                    // 串行加载其他币种，避免同时发起太多请求
+                    for (const currency of otherCurrencies) {
+                        await this.loadCurrencyData(currency);
+                    }
+                }
+
+                // 2. 加载年度收益（最慢的请求）
+                console.log('[APP] 后台加载年度收益...');
+                await overallInfo.refreshYearlyOnly();
+
+                console.log('[APP] 后台数据加载完成');
+            } catch (error) {
+                console.error('[APP] 后台数据加载失败:', error);
+            }
+        }, 500);
     }
 
     // 币种切换事件处理
