@@ -729,13 +729,6 @@ func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]i
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
-	
-	// 调试输出：打印API响应（仅用于诊断）
-	if strings.Contains(path, "funding/offers") || strings.Contains(path, "funding/credits") {
-		fmt.Printf("[DEBUG] API Path: %s\n", path)
-		fmt.Printf("[DEBUG] Response Body: %s\n", string(responseBody))
-		fmt.Printf("[DEBUG] Response Length: %d bytes\n", len(responseBody))
-	}
-	
+
 	return responseBody, nil
 }
