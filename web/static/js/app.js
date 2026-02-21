@@ -5,8 +5,6 @@ class BitfinexBotApp {
         this.lastConnectionTime = null;
         this.logUpdateTimer = null;
         this.logUpdateInterval = 3000; // 3秒更新一次日志
-        this.overallInfoTimer = null;
-        this.overallInfoInterval = 60000; // 60秒更新一次整体信息
         this.fullRefreshTimer = null;
         this.fullRefreshInterval = 300000; // 默认 5 分钟
         this.minutesRun = 5;
@@ -31,10 +29,7 @@ class BitfinexBotApp {
             // 启动日志轮询
             this.startLogPolling();
 
-            // 启动整体信息轮询
-            this.startOverallInfoPolling();
-
-            // 启动全量刷新轮询（基于 MINUTES_RUN）
+            // 启动全量刷新轮询（基于 MINUTES_RUN，统一刷新所有数据）
             this.startFullRefreshPolling();
 
             // 监听币种切换事件
@@ -347,27 +342,6 @@ class BitfinexBotApp {
         }
     }
 
-    // 启动整体信息轮询
-    startOverallInfoPolling() {
-        if (this.overallInfoTimer) {
-            clearInterval(this.overallInfoTimer);
-        }
-
-        this.overallInfoTimer = setInterval(() => {
-            overallInfo.refreshData();
-        }, this.overallInfoInterval);
-
-        console.log('[APP] 整体信息轮询已启动');
-    }
-
-    // 停止整体信息轮询
-    stopOverallInfoPolling() {
-        if (this.overallInfoTimer) {
-            clearInterval(this.overallInfoTimer);
-            this.overallInfoTimer = null;
-        }
-    }
-
     // 启动全量刷新轮询
     startFullRefreshPolling() {
         if (this.fullRefreshTimer) {
@@ -503,7 +477,6 @@ class BitfinexBotApp {
     // 清理资源
     cleanup() {
         this.stopLogPolling();
-        this.stopOverallInfoPolling();
         this.stopFullRefreshPolling();
         this.stopCountdown();
         dashboard.destroyAllCharts();
