@@ -51,16 +51,16 @@ class ConfigManager {
         }
 
         let html = '<div class="min-rates-list">';
-        html += '<div class="small text-muted mb-2">最小贷出利率</div>';
+        html += '<div class="small text-muted mb-2">最小贷出利率（日利率）</div>';
 
         for (const [currency, currencyConfig] of Object.entries(config.CURRENCIES)) {
             if (currencyConfig.ENABLED) {
                 const rate = currencyConfig.MIN_DAILY_LEND_RATE || 0;
-                const ratePercent = (rate * 100).toFixed(4);
+                // 直接显示原始值，保持和配置文件一致
                 html += `
                     <div class="min-rate-item">
                         <span class="currency-name">${currency.toUpperCase()}</span>
-                        <span class="rate-value">${ratePercent}%</span>
+                        <span class="rate-value">${rate}</span>
                     </div>
                 `;
             }

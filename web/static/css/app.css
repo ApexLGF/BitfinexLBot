@@ -439,6 +439,26 @@ body {
     color: var(--success-color);
 }
 
+/* 钱包总额显示 */
+.wallet-total-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.wallet-total-currency {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9rem;
+}
+
+.wallet-total-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
 /* 最小利率显示 */
 .min-rates-list {
     border-top: 1px solid #dee2e6;
