@@ -123,6 +123,11 @@ class CurrencyDashboard {
             if (weeklyElement) weeklyElement.textContent = (earnings.weekly || 0).toFixed(4);
             if (monthlyElement) monthlyElement.textContent = (earnings.monthly || 0).toFixed(4);
         }
+
+        // 更新右侧钱包总额显示
+        if (window.overallInfo) {
+            overallInfo.updateWalletTotalFromCache();
+        }
     }
 
     // 更新收益图表

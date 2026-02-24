@@ -7,9 +7,6 @@ class OverallInfoPanel {
         // 年度收益缓存
         this.yearlyEarningsCache = null;
         this.yearlyEarningsCacheDate = null;
-        // 钱包总额缓存
-        this.walletTotalCache = null;
-        this.walletTotalCacheDate = null;
     }
 
     // 刷新所有数据
@@ -20,11 +17,11 @@ class OverallInfoPanel {
             // FRR 利率每次都刷新
             await this.refreshFRROnly();
 
-            // 钱包总额和年度收益使用缓存逻辑
-            await Promise.all([
-                this.refreshWalletTotal(),
-                this.refreshYearlyOnly()
-            ]);
+            // 年度收益使用缓存逻辑
+            await this.refreshYearlyOnly();
+
+            // 钱包总额从 dashboard 缓存读取
+            this.updateWalletTotalFromCache();
 
             console.log('[OverallInfo] 整体信息刷新完成');
         } catch (error) {
@@ -47,44 +44,57 @@ class OverallInfoPanel {
         }
     }
 
-    // 刷新钱包总额（每天 UTC 1:35 后更新一次）
-    async refreshWalletTotal() {
-        console.log('[OverallInfo] 检查钱包总额是否需要刷新');
+    // 更新钱包总额（从 dashboard 缓存汇总）
+    updateWalletTotalFromCache() {
+        if (!this.walletTotalContainer) return;
 
-        // 先尝试从 localStorage 恢复缓存
-        if (!this.walletTotalCache) {
-            const cached = localStorage.getItem('walletTotalCache');
-            if (cached) {
-                this.walletTotalCache = JSON.parse(cached);
-                this.walletTotalCacheDate = localStorage.getItem('walletTotalCacheDate');
-            }
+        const cache = window.dashboard ? window.dashboard.dataCache : null;
+        if (!cache || Object.keys(cache).length === 0) {
+            this.walletTotalContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
+            return;
         }
 
-        if (this.shouldRefreshCache('walletTotal')) {
-            console.log('[OverallInfo] 需要刷新钱包总额');
-            try {
-                const response = await api.getStatus();  // 无参数获取所有币种汇总
-                this.walletTotalCache = response.data;
-                this.walletTotalCacheDate = new Date().toISOString().split('T')[0];
-                localStorage.setItem('walletTotalCache', JSON.stringify(this.walletTotalCache));
-                localStorage.setItem('walletTotalCacheDate', this.walletTotalCacheDate);
-                this.updateWalletTotal(this.walletTotalCache);
-                console.log('[OverallInfo] 钱包总额刷新完成');
-            } catch (error) {
-                console.error('[OverallInfo] 钱包总额刷新失败:', error);
-                if (this.walletTotalContainer) {
-                    this.walletTotalContainer.innerHTML = '<div class="text-center text-danger py-2"><i class="bi bi-exclamation-triangle me-1"></i>加载失败</div>';
-                }
-            }
-        } else {
-            console.log('[OverallInfo] 使用缓存的钱包总额');
-            if (this.walletTotalCache) {
-                this.updateWalletTotal(this.walletTotalCache);
-            } else {
-                // 没有缓存数据，显示暂无数据
-                this.walletTotalContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
-            }
+        let html = '';
+        let grandTotal = 0;
+
+        for (const [currency, cached] of Object.entries(cache)) {
+            if (!cached || !cached.data) continue;
+
+            const data = cached.data;
+            const offers = data.offers || [];
+            const credits = data.credits || {};
+            const status = data.status || {};
+
+            const offersTotal = offers.reduce((sum, o) => sum + (o.amount || 0), 0);
+            const creditsTotal = credits.total_amount || 0;
+            const available = status.available_funds || 0;
+            const total = offersTotal + creditsTotal + available;
+
+            grandTotal += total;
+
+            html += `
+                <div class="wallet-total-item">
+                    <span class="wallet-total-currency">${currency.toUpperCase()}</span>
+                    <span class="wallet-total-value">${total.toFixed(2)}</span>
+                </div>
+            `;
         }
+
+        if (html === '') {
+            this.walletTotalContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
+            return;
+        }
+
+        // 添加总计
+        html += `
+            <hr class="my-2">
+            <div class="wallet-total-item">
+                <span class="wallet-total-currency fw-bold">总计</span>
+                <span class="wallet-total-value fw-bold text-primary">${grandTotal.toFixed(2)}</span>
+            </div>
+        `;
+
+        this.walletTotalContainer.innerHTML = html;
     }
 
     // 只刷新年度收益（每天 UTC 1:35 后更新一次）
@@ -133,9 +143,7 @@ class OverallInfoPanel {
         const todayDate = now.toISOString().split('T')[0];
 
         let cacheDate;
-        if (cacheType === 'walletTotal') {
-            cacheDate = this.walletTotalCacheDate || localStorage.getItem('walletTotalCacheDate');
-        } else if (cacheType === 'yearlyEarnings') {
+        if (cacheType === 'yearlyEarnings') {
             cacheDate = this.yearlyEarningsCacheDate || localStorage.getItem('yearlyEarningsCacheDate');
         }
 
@@ -167,43 +175,6 @@ class OverallInfoPanel {
         `).join('');
 
         this.frrContainer.innerHTML = html;
-    }
-
-    // 更新钱包总额显示
-    updateWalletTotal(data) {
-        if (!this.walletTotalContainer) return;
-
-        if (!data || !data.currencies) {
-            this.walletTotalContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
-            return;
-        }
-
-        const currencies = data.currencies;
-        let grandTotal = 0;
-
-        let html = '';
-        for (const [currency, status] of Object.entries(currencies)) {
-            const availableFunds = status.available_funds || 0;
-            grandTotal += availableFunds;
-
-            html += `
-                <div class="wallet-total-item">
-                    <span class="wallet-total-currency">${currency}</span>
-                    <span class="wallet-total-value">${availableFunds.toFixed(2)}</span>
-                </div>
-            `;
-        }
-
-        // 添加总计
-        html += `
-            <hr class="my-2">
-            <div class="wallet-total-item">
-                <span class="wallet-total-currency fw-bold">可用总额</span>
-                <span class="wallet-total-value fw-bold text-primary">${grandTotal.toFixed(2)}</span>
-            </div>
-        `;
-
-        this.walletTotalContainer.innerHTML = html;
     }
 
     // 更新年度收益
