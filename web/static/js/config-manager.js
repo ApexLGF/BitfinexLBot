@@ -174,6 +174,8 @@ class ConfigManager {
                 if (modalInstance) {
                     modalInstance.hide();
                 }
+                // 重新加载配置以更新页面显示
+                await this.loadConfig();
             } else {
                 alert('配置保存失败: ' + (response.error || '未知错误'));
             }

@@ -51,6 +51,15 @@ class OverallInfoPanel {
     async refreshWalletTotal() {
         console.log('[OverallInfo] 检查钱包总额是否需要刷新');
 
+        // 先尝试从 localStorage 恢复缓存
+        if (!this.walletTotalCache) {
+            const cached = localStorage.getItem('walletTotalCache');
+            if (cached) {
+                this.walletTotalCache = JSON.parse(cached);
+                this.walletTotalCacheDate = localStorage.getItem('walletTotalCacheDate');
+            }
+        }
+
         if (this.shouldRefreshCache('walletTotal')) {
             console.log('[OverallInfo] 需要刷新钱包总额');
             try {
@@ -69,15 +78,11 @@ class OverallInfoPanel {
             }
         } else {
             console.log('[OverallInfo] 使用缓存的钱包总额');
-            if (!this.walletTotalCache) {
-                const cached = localStorage.getItem('walletTotalCache');
-                if (cached) {
-                    this.walletTotalCache = JSON.parse(cached);
-                    this.walletTotalCacheDate = localStorage.getItem('walletTotalCacheDate');
-                }
-            }
             if (this.walletTotalCache) {
                 this.updateWalletTotal(this.walletTotalCache);
+            } else {
+                // 没有缓存数据，显示暂无数据
+                this.walletTotalContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
             }
         }
     }
@@ -85,6 +90,15 @@ class OverallInfoPanel {
     // 只刷新年度收益（每天 UTC 1:35 后更新一次）
     async refreshYearlyOnly() {
         console.log('[OverallInfo] 检查年度收益是否需要刷新');
+
+        // 先尝试从 localStorage 恢复缓存
+        if (!this.yearlyEarningsCache) {
+            const cached = localStorage.getItem('yearlyEarningsCache');
+            if (cached) {
+                this.yearlyEarningsCache = JSON.parse(cached);
+                this.yearlyEarningsCacheDate = localStorage.getItem('yearlyEarningsCacheDate');
+            }
+        }
 
         if (this.shouldRefreshCache('yearlyEarnings')) {
             console.log('[OverallInfo] 需要刷新年度收益');
@@ -102,15 +116,11 @@ class OverallInfoPanel {
             }
         } else {
             console.log('[OverallInfo] 使用缓存的年度收益');
-            if (!this.yearlyEarningsCache) {
-                const cached = localStorage.getItem('yearlyEarningsCache');
-                if (cached) {
-                    this.yearlyEarningsCache = JSON.parse(cached);
-                    this.yearlyEarningsCacheDate = localStorage.getItem('yearlyEarningsCacheDate');
-                }
-            }
             if (this.yearlyEarningsCache) {
                 this.updateYearlyEarnings(this.yearlyEarningsCache);
+            } else {
+                // 没有缓存数据，显示暂无数据
+                this.earningsContainer.innerHTML = '<div class="text-center text-muted py-2">暂无数据</div>';
             }
         }
     }

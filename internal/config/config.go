@@ -424,7 +424,7 @@ func updateYAMLNode(node *yaml.Node, config map[string]interface{}) error {
 	return nil
 }
 
-// updateMappingNode 更新映射节点
+// updateMappingNode 更新映射节点（递归处理嵌套 map）
 func updateMappingNode(node *yaml.Node, config map[string]interface{}) {
 	for i := 0; i < len(node.Content); i += 2 {
 		if i+1 >= len(node.Content) {
@@ -437,8 +437,18 @@ func updateMappingNode(node *yaml.Node, config map[string]interface{}) {
 		if keyNode.Kind == yaml.ScalarNode {
 			key := keyNode.Value
 			if newValue, exists := config[key]; exists {
-				// 更新值但保留注释
-				valueNode.Value = formatConfigValue(newValue)
+				// 检查是否为嵌套 map
+				if nestedMap, ok := newValue.(map[string]interface{}); ok {
+					// 如果值节点是映射类型，递归更新
+					if valueNode.Kind == yaml.MappingNode {
+						updateMappingNode(valueNode, nestedMap)
+					}
+				} else {
+					// 更新标量值但保留注释
+					if valueNode.Kind == yaml.ScalarNode {
+						valueNode.Value = formatConfigValue(newValue)
+					}
+				}
 			}
 		}
 	}
