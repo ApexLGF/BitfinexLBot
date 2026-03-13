@@ -400,9 +400,11 @@ func (c *Client) GetCurrentFundingRate(symbol string) (float64, error) {
 func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 	// 构建请求路径
 	path := fmt.Sprintf("/v2/auth/r/funding/credits/%s", symbol)
-	
-	// 构建请求体（空请求体）
-	requestBody := map[string]interface{}{}
+
+	// 构建请求体，传 limit 确保获取所有记录
+	requestBody := map[string]interface{}{
+		"limit": 500,
+	}
 	
 	// 执行认证请求
 	response, err := c.makeAuthenticatedRequest("POST", path, requestBody)
