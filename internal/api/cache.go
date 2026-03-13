@@ -168,6 +168,7 @@ func (dc *DataCache) refreshCredits() {
 			log.Printf("[Cache] 刷新 %s credits 失败: %v", upper, err)
 			continue
 		}
+		log.Printf("[Cache] %s credits 数量: %d (symbol: %s)", upper, len(c), symbol)
 		credits[upper] = c
 	}
 	dc.mu.Lock()
