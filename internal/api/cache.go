@@ -168,18 +168,6 @@ func (dc *DataCache) refreshCredits() {
 			log.Printf("[Cache] 刷新 %s credits 失败: %v", upper, err)
 			continue
 		}
-		log.Printf("[Cache] %s credits 数量: %d (symbol: %s)", upper, len(c), symbol)
-
-		// 同时获取衍生品 funding credits (fXXXF0)
-		symbolF0 := constants.FundingSymbolPrefix + upper + "F0"
-		cF0, err := dc.client.GetFundingCredits(symbolF0)
-		if err != nil {
-			log.Printf("[Cache] 刷新 %s 衍生品 credits 失败 (可忽略): %v", upper, err)
-		} else {
-			log.Printf("[Cache] %s 衍生品 credits 数量: %d (symbol: %s)", upper, len(cF0), symbolF0)
-			c = append(c, cF0...)
-		}
-
 		credits[upper] = c
 	}
 	dc.mu.Lock()

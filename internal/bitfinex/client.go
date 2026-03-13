@@ -422,8 +422,6 @@ func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 		return nil, fmt.Errorf("failed to parse funding credits response: %w", err)
 	}
 
-	log.Printf("[GetFundingCredits] %s API 返回 %d 条原始记录", symbol, len(rawData))
-
 	// 转换数据
 	result := make([]*FundingCredit, 0, len(rawData))
 	for i, raw := range rawData {
