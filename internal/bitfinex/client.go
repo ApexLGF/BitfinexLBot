@@ -678,7 +678,7 @@ func (c *Client) makeAuthenticatedRequest(method, path string, body map[string]i
 	defer c.apiMutex.Unlock()
 	
 	// 添加延迟以遵守Bitfinex API频率限制（10-90请求/分钟）
-	time.Sleep(1 * time.Second)
+	time.Sleep(700 * time.Millisecond)
 	// Bitfinex API base URL
 	baseURL := "https://api-pub.bitfinex.com"
 	

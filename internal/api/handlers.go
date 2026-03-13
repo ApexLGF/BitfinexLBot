@@ -14,7 +14,6 @@ import (
 
 	"github.com/ApexLGF/BitfinexLBot/internal/bitfinex"
 	"github.com/ApexLGF/BitfinexLBot/internal/config"
-	"github.com/ApexLGF/BitfinexLBot/internal/constants"
 	"github.com/ApexLGF/BitfinexLBot/internal/currency"
 )
 
@@ -27,11 +26,12 @@ type Handler struct {
 	lastUpdate      time.Time
 	nextRun         time.Time
 	configPath      string // 添加配置文件路径
+	cache           *DataCache // 数据缓存，避免 Web API 阻塞
 }
 
 // NewHandler 创建新的API处理器
 func NewHandler(config *config.Config, client *bitfinex.Client, currencyManager *currency.CurrencyManager, configPath string) *Handler {
-	return &Handler{
+	h := &Handler{
 		config:          config,
 		client:          client,
 		currencyManager: currencyManager,
@@ -40,6 +40,12 @@ func NewHandler(config *config.Config, client *bitfinex.Client, currencyManager 
 		nextRun:         time.Now().Add(time.Duration(config.MinutesRun) * time.Minute),
 		configPath:      configPath,
 	}
+
+	// 初始化数据缓存，TTL 60秒，后台每30秒刷新一次
+	h.cache = NewDataCache(client, currencyManager, h, 60*time.Second)
+	h.cache.StartBackgroundRefresh(30 * time.Second)
+
+	return h
 }
 
 // GetStatus 获取机器人状态
@@ -57,37 +63,16 @@ func (h *Handler) GetStatus(c *gin.Context) {
 	h.getAllCurrenciesStatus(c)
 }
 
-// getSingleCurrencyStatus 获取单个币种状态
+// getSingleCurrencyStatus 获取单个币种状态（从缓存读取）
 func (h *Handler) getSingleCurrencyStatus(c *gin.Context, currency string) {
-	var errors []string
-
-	// 确保币种名称是大写
 	upperCurrency := strings.ToUpper(currency)
 
-	// 获取钱包余额
-	availableFunds, err := h.client.GetFundingBalance(upperCurrency)
-	if err != nil {
-		errorMsg := fmt.Sprintf("获取钱包余额失败: %v", err)
-		log.Printf("[API] GetStatus: %s", errorMsg)
-		errors = append(errors, errorMsg)
-		availableFunds = 0
-	}
+	availableFunds := h.cache.GetBalance(upperCurrency)
+	offers := h.cache.GetOffers(upperCurrency)
+	activeOffers := len(offers)
 
-	// 获取活跃订单数量
-	symbol := constants.FundingSymbolPrefix + upperCurrency
-	offers, err := h.client.GetFundingOffers(symbol)
-	activeOffers := 0
-	if err != nil {
-		errorMsg := fmt.Sprintf("获取活跃订单失败: %v", err)
-		log.Printf("[API] GetStatus: %s", errorMsg)
-		errors = append(errors, errorMsg)
-	} else {
-		activeOffers = len(offers)
-	}
-
-	// 获取总收益 - 使用月收益作为总收益
 	totalEarnings := float64(0)
-	if earnings := h.getCurrencyEarningsInternal(upperCurrency); earnings.Monthly > 0 {
+	if earnings, ok := h.cache.GetEarnings(upperCurrency); ok && earnings.Monthly > 0 {
 		totalEarnings = earnings.Monthly
 	}
 
@@ -99,7 +84,6 @@ func (h *Handler) getSingleCurrencyStatus(c *gin.Context, currency string) {
 		ActiveOffers:   activeOffers,
 		AvailableFunds: availableFunds,
 		Currency:       currency,
-		Errors:         errors,
 	}
 
 	c.JSON(http.StatusOK, APIResponse{
@@ -108,7 +92,7 @@ func (h *Handler) getSingleCurrencyStatus(c *gin.Context, currency string) {
 	})
 }
 
-// getAllCurrenciesStatus 获取所有币种状态
+// getAllCurrenciesStatus 获取所有币种状态（从缓存读取）
 func (h *Handler) getAllCurrenciesStatus(c *gin.Context) {
 	currencies := h.currencyManager.GetEnabledCurrencies()
 	statuses := make(map[string]BotStatus)
@@ -116,25 +100,29 @@ func (h *Handler) getAllCurrenciesStatus(c *gin.Context) {
 	var totalEarnings, totalAvailableFunds float64
 	var totalActiveOffers int
 
-	for _, currency := range currencies {
-		availableFunds, _ := h.client.GetFundingBalance(currency)
-		symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-		offers, _ := h.client.GetFundingOffers(symbol)
-		earnings := h.getCurrencyEarningsInternal(currency)
+	allBalances := h.cache.GetAllBalances()
+	allOffers := h.cache.GetAllOffers()
+	allEarnings := h.cache.GetAllEarnings()
 
-		statuses[currency] = BotStatus{
+	for _, cur := range currencies {
+		upper := strings.ToUpper(cur)
+		balance := allBalances[upper]
+		offers := allOffers[upper]
+		earnings := allEarnings[upper]
+
+		statuses[cur] = BotStatus{
 			IsRunning:      h.isRunning,
 			LastUpdate:     h.lastUpdate,
 			NextRun:        h.nextRun,
 			TotalEarnings:  earnings.Monthly,
 			ActiveOffers:   len(offers),
-			AvailableFunds: availableFunds,
-			Currency:       currency,
+			AvailableFunds: balance,
+			Currency:       cur,
 		}
 
 		totalEarnings += earnings.Monthly
 		totalActiveOffers += len(offers)
-		totalAvailableFunds += availableFunds
+		totalAvailableFunds += balance
 	}
 
 	response := map[string]interface{}{
@@ -171,14 +159,19 @@ func (h *Handler) GetEarnings(c *gin.Context) {
 	h.getSingleCurrencyEarnings(c, currency)
 }
 
-// getSingleCurrencyEarnings 获取单个币种的收益数据
+// getSingleCurrencyEarnings 获取单个币种的收益数据（从缓存读取）
 func (h *Handler) getSingleCurrencyEarnings(c *gin.Context, currency string) {
-	log.Printf("[API] GetEarnings 开始获取 %s 的30天收益数据", currency)
-
-	earnings := h.getCurrencyEarningsInternal(strings.ToUpper(currency))
-
-	log.Printf("[API] 收益统计 - 日: %.4f, 周: %.4f, 月: %.4f",
-		earnings.Daily, earnings.Weekly, earnings.Monthly)
+	upper := strings.ToUpper(currency)
+	earnings, ok := h.cache.GetEarnings(upper)
+	if !ok {
+		earnings = EarningsData{
+			Daily:    0,
+			Weekly:   0,
+			Monthly:  0,
+			Currency: upper,
+			History:  []EarningsHistory{},
+		}
+	}
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
@@ -186,19 +179,12 @@ func (h *Handler) getSingleCurrencyEarnings(c *gin.Context, currency string) {
 	})
 }
 
-// getAllCurrenciesEarnings 获取所有币种的收益数据
+// getAllCurrenciesEarnings 获取所有币种的收益数据（从缓存读取）
 func (h *Handler) getAllCurrenciesEarnings(c *gin.Context) {
-	log.Printf("[API] GetEarnings 开始获取所有币种的30天收益数据")
-
-	currencies := h.currencyManager.GetEnabledCurrencies()
-	allEarnings := make(map[string]EarningsData)
+	allEarnings := h.cache.GetAllEarnings()
 
 	var totalDaily, totalWeekly, totalMonthly float64
-
-	for _, currency := range currencies {
-		earnings := h.getCurrencyEarningsInternal(strings.ToUpper(currency))
-		allEarnings[strings.ToUpper(currency)] = earnings
-
+	for _, earnings := range allEarnings {
 		totalDaily += earnings.Daily
 		totalWeekly += earnings.Weekly
 		totalMonthly += earnings.Monthly
@@ -212,9 +198,6 @@ func (h *Handler) getAllCurrenciesEarnings(c *gin.Context) {
 			"monthly": totalMonthly,
 		},
 	}
-
-	log.Printf("[API] 总收益统计 - 日: %.4f, 周: %.4f, 月: %.4f",
-		totalDaily, totalWeekly, totalMonthly)
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
@@ -343,9 +326,8 @@ func (h *Handler) GetWeeklyEarnings(c *gin.Context) {
 	})
 }
 
-// getEarningsDataInternal 内部获取收益数据（避免重复代码）
+// getEarningsDataInternal 内部获取收益数据（从缓存读取）
 func (h *Handler) getEarningsDataInternal() EarningsData {
-	// 获取第一个启用的币种
 	currencies := h.currencyManager.GetEnabledCurrencies()
 	if len(currencies) == 0 {
 		return EarningsData{
@@ -356,8 +338,17 @@ func (h *Handler) getEarningsDataInternal() EarningsData {
 		}
 	}
 
-	// 返回第一个币种的收益数据
-	return h.getCurrencyEarningsInternal(currencies[0])
+	upper := strings.ToUpper(currencies[0])
+	if earnings, ok := h.cache.GetEarnings(upper); ok {
+		return earnings
+	}
+
+	return EarningsData{
+		Daily:   0,
+		Weekly:  0,
+		Monthly: 0,
+		History: []EarningsHistory{},
+	}
 }
 
 // getCurrencyEarningsInternal 获取特定币种的收益数据
@@ -401,26 +392,11 @@ func (h *Handler) GetOffers(c *gin.Context) {
 	h.getSingleCurrencyOffers(c, currency)
 }
 
-// getSingleCurrencyOffers 获取单个币种的放贷订单
+// getSingleCurrencyOffers 获取单个币种的放贷订单（从缓存读取）
 func (h *Handler) getSingleCurrencyOffers(c *gin.Context, currency string) {
-	symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-	clientIP := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-	log.Printf("[API] GetOffers 开始调用, symbol: %s, client: %s, user-agent: %s", symbol, clientIP, userAgent)
+	upper := strings.ToUpper(currency)
+	offers := h.cache.GetOffers(upper)
 
-	offers, err := h.client.GetFundingOffers(symbol)
-	if err != nil {
-		log.Printf("[API] GetOffers 失败: %v", err)
-		c.JSON(http.StatusInternalServerError, APIResponse{
-			Success: false,
-			Error:   "获取订单失败: " + err.Error(),
-		})
-		return
-	}
-
-	log.Printf("[API] GetOffers 成功获取 %d 个放贷订单", len(offers))
-
-	// 初始化为空数组而不是 nil
 	offerData := make([]OfferData, 0)
 	for _, offer := range offers {
 		offerData = append(offerData, OfferData{
@@ -430,11 +406,9 @@ func (h *Handler) getSingleCurrencyOffers(c *gin.Context, currency string) {
 			Period:   offer.Period,
 			Status:   "ACTIVE",
 			Created:  time.Now(),
-			Currency: strings.ToUpper(currency),
+			Currency: upper,
 		})
 	}
-
-	log.Printf("[API] GetOffers 响应: 返回 %d 个订单", len(offerData))
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
@@ -442,19 +416,12 @@ func (h *Handler) getSingleCurrencyOffers(c *gin.Context, currency string) {
 	})
 }
 
-// getAllCurrenciesOffers 获取所有币种的放贷订单
+// getAllCurrenciesOffers 获取所有币种的放贷订单（从缓存读取）
 func (h *Handler) getAllCurrenciesOffers(c *gin.Context) {
-	currencies := h.currencyManager.GetEnabledCurrencies()
-	allOffers := make(map[string][]OfferData)
+	allOffers := h.cache.GetAllOffers()
+	result := make(map[string][]OfferData)
 
-	for _, currency := range currencies {
-		symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-		offers, err := h.client.GetFundingOffers(symbol)
-		if err != nil {
-			log.Printf("[API] 获取 %s 订单失败: %v", currency, err)
-			continue
-		}
-
+	for cur, offers := range allOffers {
 		offerData := make([]OfferData, 0)
 		for _, offer := range offers {
 			offerData = append(offerData, OfferData{
@@ -464,16 +431,15 @@ func (h *Handler) getAllCurrenciesOffers(c *gin.Context) {
 				Period:   offer.Period,
 				Status:   "ACTIVE",
 				Created:  time.Now(),
-				Currency: strings.ToUpper(currency),
+				Currency: cur,
 			})
 		}
-
-		allOffers[strings.ToUpper(currency)] = offerData
+		result[cur] = offerData
 	}
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
-		Data:    allOffers,
+		Data:    result,
 	})
 }
 
@@ -729,27 +695,15 @@ func (h *Handler) GetFundingCredits(c *gin.Context) {
 	h.getSingleCurrencyCredits(c, currency)
 }
 
-// getSingleCurrencyCredits 获取单个币种的已贷出订单
+// getSingleCurrencyCredits 获取单个币种的已贷出订单（从缓存读取）
 func (h *Handler) getSingleCurrencyCredits(c *gin.Context, currency string) {
-	symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-	log.Printf("[API] GetFundingCredits 开始调用, symbol: %s", symbol)
-
-	credits, err := h.client.GetFundingCredits(symbol)
-	if err != nil {
-		log.Printf("[API] GetFundingCredits 失败: %v", err)
-		c.JSON(http.StatusInternalServerError, APIResponse{
-			Success: false,
-			Error:   "获取已贷出订单失败: " + err.Error(),
-		})
-		return
-	}
-
-	log.Printf("[API] GetFundingCredits 成功获取 %d 个已贷出订单", len(credits))
+	upper := strings.ToUpper(currency)
+	credits := h.cache.GetCredits(upper)
 
 	creditData := make([]FundingCreditData, 0)
-	var totalAmount float64 = 0
-	var totalRate float64 = 0
-	var validCount int = 0
+	var totalAmount float64
+	var totalRate float64
+	var validCount int
 
 	if credits == nil {
 		credits = []*bitfinex.FundingCredit{}
@@ -768,7 +722,7 @@ func (h *Handler) getSingleCurrencyCredits(c *gin.Context, currency string) {
 			Status:   credit.Status,
 			Created:  time.Unix(credit.MTSCreated/1000, (credit.MTSCreated%1000)*1000000),
 			Opened:   time.Unix(credit.MTSOpened/1000, (credit.MTSOpened%1000)*1000000),
-			Currency: strings.ToUpper(currency),
+			Currency: upper,
 		})
 
 		totalAmount += credit.Amount
@@ -790,32 +744,22 @@ func (h *Handler) getSingleCurrencyCredits(c *gin.Context, currency string) {
 		AvgRate:     avgRate,
 	}
 
-	log.Printf("[API] GetFundingCredits 响应: count=%d, total=%.2f, avg_rate=%.6f",
-		response.TotalCount, response.TotalAmount, response.AvgRate)
-
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
 		Data:    response,
 	})
 }
 
-// getAllCurrenciesCredits 获取所有币种的已贷出订单
+// getAllCurrenciesCredits 获取所有币种的已贷出订单（从缓存读取）
 func (h *Handler) getAllCurrenciesCredits(c *gin.Context) {
-	currencies := h.currencyManager.GetEnabledCurrencies()
-	allCredits := make(map[string]FundingCreditsResponse)
+	allCredits := h.cache.GetAllCredits()
+	result := make(map[string]FundingCreditsResponse)
 
-	for _, currency := range currencies {
-		symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-		credits, err := h.client.GetFundingCredits(symbol)
-		if err != nil {
-			log.Printf("[API] 获取 %s 已贷出订单失败: %v", currency, err)
-			continue
-		}
-
+	for cur, credits := range allCredits {
 		creditData := make([]FundingCreditData, 0)
-		var totalAmount float64 = 0
-		var totalRate float64 = 0
-		var validCount int = 0
+		var totalAmount float64
+		var totalRate float64
+		var validCount int
 
 		for _, credit := range credits {
 			if credit == nil {
@@ -830,7 +774,7 @@ func (h *Handler) getAllCurrenciesCredits(c *gin.Context) {
 				Status:   credit.Status,
 				Created:  time.Unix(credit.MTSCreated/1000, (credit.MTSCreated%1000)*1000000),
 				Opened:   time.Unix(credit.MTSOpened/1000, (credit.MTSOpened%1000)*1000000),
-				Currency: strings.ToUpper(currency),
+				Currency: cur,
 			})
 
 			totalAmount += credit.Amount
@@ -845,7 +789,7 @@ func (h *Handler) getAllCurrenciesCredits(c *gin.Context) {
 			avgRate = totalRate / float64(validCount)
 		}
 
-		allCredits[strings.ToUpper(currency)] = FundingCreditsResponse{
+		result[cur] = FundingCreditsResponse{
 			Credits:     creditData,
 			TotalCount:  len(creditData),
 			TotalAmount: totalAmount,
@@ -855,33 +799,36 @@ func (h *Handler) getAllCurrenciesCredits(c *gin.Context) {
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
-		Data:    allCredits,
+		Data:    result,
 	})
 }
 
-// GetWallets 获取钱包信息
+// GetWallets 获取钱包信息（从缓存读取）
 func (h *Handler) GetWallets(c *gin.Context) {
-	wallets, err := h.client.GetWallets()
-	if err != nil {
-		log.Printf("[API] GetWallets 失败: %v", err)
-		c.JSON(http.StatusInternalServerError, APIResponse{
-			Success: false,
-			Error:   "获取钱包信息失败: " + err.Error(),
+	wallets := h.cache.GetWallets()
+	if wallets == nil {
+		c.JSON(http.StatusOK, APIResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"wallets":           []interface{}{},
+				"total_balance":     0,
+				"available_balance": 0,
+				"currency":          h.config.Currency,
+			},
 		})
 		return
 	}
-	
-	// 计算指定货币的总资金
+
 	var totalBalance float64
 	var availableBalance float64
 	var walletData []map[string]interface{}
-	
+
 	for _, wallet := range wallets {
 		if wallet.Currency == h.config.Currency {
 			totalBalance += wallet.Balance
 			availableBalance += wallet.Available
 		}
-		
+
 		walletData = append(walletData, map[string]interface{}{
 			"currency":  wallet.Currency,
 			"type":      wallet.Type,
@@ -889,14 +836,14 @@ func (h *Handler) GetWallets(c *gin.Context) {
 			"available": wallet.Available,
 		})
 	}
-	
+
 	response := map[string]interface{}{
 		"wallets":           walletData,
 		"total_balance":     totalBalance,
 		"available_balance": availableBalance,
 		"currency":          h.config.Currency,
 	}
-	
+
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,
 		Data:    response,
@@ -906,7 +853,7 @@ func (h *Handler) GetWallets(c *gin.Context) {
 // GetSystemInfo 获取系统信息
 func (h *Handler) GetSystemInfo(c *gin.Context) {
 	info := map[string]interface{}{
-		"version":     "2.0.0",
+		"version":     "2.7.0",
 		"go_version":  "1.23",
 		"start_time":  time.Now(), // TODO: 记录实际启动时间
 		"api_version": "v1",
@@ -1019,24 +966,9 @@ func (h *Handler) hasConfigChanged(oldConfig, newConfig *config.Config) bool {
 	return false
 }
 
-// GetFRRRates 获取所有币种的当前 FRR 利率
+// GetFRRRates 获取所有币种的当前 FRR 利率（从缓存读取）
 func (h *Handler) GetFRRRates(c *gin.Context) {
-	log.Printf("[API] GetFRRRates 开始获取所有币种的 FRR 利率")
-
-	currencies := h.currencyManager.GetEnabledCurrencies()
-	frrRates := make(map[string]float64)
-
-	for _, currency := range currencies {
-		symbol := constants.FundingSymbolPrefix + strings.ToUpper(currency)
-		rate, err := h.client.GetCurrentFundingRate(symbol)
-		if err != nil {
-			log.Printf("[API] 获取 %s FRR 利率失败: %v", currency, err)
-			frrRates[strings.ToUpper(currency)] = 0
-			continue
-		}
-		frrRates[strings.ToUpper(currency)] = rate
-		log.Printf("[API] %s FRR 利率: %.6f", currency, rate)
-	}
+	frrRates := h.cache.GetAllFRRRates()
 
 	c.JSON(http.StatusOK, APIResponse{
 		Success: true,

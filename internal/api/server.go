@@ -97,7 +97,7 @@ func (s *Server) healthCheck(c *gin.Context) {
 		Message: "BitfinexBot API is running",
 		Data: map[string]interface{}{
 			"timestamp": time.Now(),
-			"version":   "2.0.0",
+			"version":   "2.7.0",
 		},
 	})
 }
