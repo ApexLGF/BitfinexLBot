@@ -99,8 +99,8 @@ class CurrencyDashboard {
         // 获取可用余额
         const available = status.available_funds || 0;
 
-        // 计算总金额
-        const total = offersTotal + creditsTotal + available;
+        // 总金额直接用 funding 钱包的 Balance
+        const total = status.total_funds || (offersTotal + creditsTotal + available);
 
         // 更新统计卡片显示
         const creditsElement = document.getElementById(`stat-credits-${currency}`);

@@ -18,6 +18,7 @@ type BotStatus struct {
 	TotalEarnings float64   `json:"total_earnings"`
 	ActiveOffers  int       `json:"active_offers"`
 	AvailableFunds float64  `json:"available_funds"`
+	TotalFunds    float64   `json:"total_funds"`
 	Currency      string    `json:"currency"`
 	Errors        []string  `json:"errors,omitempty"` // API调用错误信息
 }

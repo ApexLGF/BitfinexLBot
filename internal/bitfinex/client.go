@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -421,56 +422,69 @@ func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 	
 	// 转换数据
 	result := make([]*FundingCredit, 0, len(rawData))
-	for _, raw := range rawData {
+	for i, raw := range rawData {
 		if len(raw) < 13 { // 确保有足够的字段
+			log.Printf("[GetFundingCredits] 跳过第 %d 条记录: 字段数不足 (%d < 13)", i, len(raw))
 			continue
 		}
-		
+
 		// Funding credit格式根据实际调试输出: [ID, SYMBOL, SIDE, MTSCreated, MTSUpdated, AMOUNT, FLAGS, STATUS, TYPE, ?, ?, RATE, PERIOD, MTSOpened, ...]
-		
+
 		// [0] ID
 		id, ok := raw[0].(float64)
 		if !ok {
+			log.Printf("[GetFundingCredits] 跳过第 %d 条记录: ID 类型断言失败, 值: %v (%T)", i, raw[0], raw[0])
 			continue
 		}
-		
+
 		// [1] SYMBOL
 		symbol, ok := raw[1].(string)
 		if !ok {
+			log.Printf("[GetFundingCredits] 跳过第 %d 条记录: SYMBOL 类型断言失败, 值: %v (%T)", i, raw[1], raw[1])
 			continue
 		}
-		
+
 		// [3] MTSCreated
-		mtsCreated, ok := raw[3].(float64)
-		if !ok {
-			continue
+		mtsCreated := int64(0)
+		if raw[3] != nil {
+			if v, ok := raw[3].(float64); ok {
+				mtsCreated = int64(v)
+			}
 		}
-		
+
 		// [5] AMOUNT
-		amount, ok := raw[5].(float64)
-		if !ok {
-			continue
+		amount := float64(0)
+		if raw[5] != nil {
+			if v, ok := raw[5].(float64); ok {
+				amount = v
+			}
 		}
-		
+
 		// [7] STATUS
-		status, ok := raw[7].(string)
-		if !ok {
-			continue
+		status := ""
+		if raw[7] != nil {
+			if v, ok := raw[7].(string); ok {
+				status = v
+			}
 		}
-		
-		// [11] RATE (根据调试输出，RATE在索引11)
-		rate, ok := raw[11].(float64)
-		if !ok {
-			continue
+
+		// [11] RATE
+		rate := float64(0)
+		if raw[11] != nil {
+			if v, ok := raw[11].(float64); ok {
+				rate = v
+			}
 		}
-		
-		// [12] PERIOD (根据调试输出，PERIOD在索引12)
-		period, ok := raw[12].(float64)
-		if !ok {
-			continue
+
+		// [12] PERIOD
+		period := int64(0)
+		if raw[12] != nil {
+			if v, ok := raw[12].(float64); ok {
+				period = int64(v)
+			}
 		}
-		
-		// [13] MTSOpened (根据调试输出，MTSOpened在索引13)
+
+		// [13] MTSOpened
 		mtsOpened := int64(0)
 		if len(raw) > 13 && raw[13] != nil {
 			if opened, ok := raw[13].(float64); ok {
@@ -483,8 +497,8 @@ func (c *Client) GetFundingCredits(symbol string) ([]*FundingCredit, error) {
 			Symbol:     symbol,
 			Amount:     amount,
 			Rate:       rate, // API 已返回日利率
-			Period:     int64(period),
-			MTSCreated: int64(mtsCreated),
+			Period:     period,
+			MTSCreated: mtsCreated,
 			MTSOpened:  mtsOpened,
 			Status:     status,
 		}

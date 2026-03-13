@@ -68,7 +68,7 @@ class OverallInfoPanel {
             const offersTotal = offers.reduce((sum, o) => sum + (o.amount || 0), 0);
             const creditsTotal = credits.total_amount || 0;
             const available = status.available_funds || 0;
-            const total = offersTotal + creditsTotal + available;
+            const total = status.total_funds || (offersTotal + creditsTotal + available);
 
             grandTotal += total;
 

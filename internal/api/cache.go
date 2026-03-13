@@ -19,7 +19,8 @@ type DataCache struct {
 	wallets    []*bitfinex.Wallet
 	offers     map[string][]*bitfinex.FundingOffer  // key: 大写币种
 	credits    map[string][]*bitfinex.FundingCredit  // key: 大写币种
-	balances   map[string]float64                    // key: 大写币种
+	balances   map[string]float64                    // key: 大写币种, funding 钱包总余额 (Balance)
+	available  map[string]float64                    // key: 大写币种, funding 钱包可用余额 (Available)
 	frrRates   map[string]float64                    // key: 大写币种
 	earnings   map[string]EarningsData               // key: 大写币种
 
@@ -53,6 +54,7 @@ func NewDataCache(client *bitfinex.Client, cm *currency.CurrencyManager, handler
 		offers:          make(map[string][]*bitfinex.FundingOffer),
 		credits:         make(map[string][]*bitfinex.FundingCredit),
 		balances:        make(map[string]float64),
+		available:       make(map[string]float64),
 		frrRates:        make(map[string]float64),
 		earnings:        make(map[string]EarningsData),
 		stopCh:          make(chan struct{}),
@@ -111,19 +113,27 @@ func (dc *DataCache) refreshWallets() {
 }
 
 func (dc *DataCache) refreshBalances() {
+	// 从已缓存的 wallets 中提取 funding 钱包的 Balance 和 Available
+	dc.mu.RLock()
+	wallets := dc.wallets
+	dc.mu.RUnlock()
+
 	currencies := dc.currencyManager.GetEnabledCurrencies()
 	balances := make(map[string]float64)
+	available := make(map[string]float64)
 	for _, cur := range currencies {
 		upper := strings.ToUpper(cur)
-		balance, err := dc.client.GetFundingBalance(upper)
-		if err != nil {
-			log.Printf("[Cache] 刷新 %s 余额失败: %v", upper, err)
-			continue
+		for _, wallet := range wallets {
+			if wallet.Currency == upper && wallet.Type == "funding" {
+				balances[upper] = wallet.Balance
+				available[upper] = wallet.Available
+				break
+			}
 		}
-		balances[upper] = balance
 	}
 	dc.mu.Lock()
 	dc.balances = balances
+	dc.available = available
 	dc.balancesUpdated = time.Now()
 	dc.mu.Unlock()
 }
@@ -208,11 +218,18 @@ func (dc *DataCache) GetWallets() []*bitfinex.Wallet {
 	return dc.wallets
 }
 
-// GetBalance 获取缓存的余额
+// GetBalance 获取缓存的总余额 (wallet.Balance)
 func (dc *DataCache) GetBalance(currency string) float64 {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
 	return dc.balances[strings.ToUpper(currency)]
+}
+
+// GetAvailable 获取缓存的可用余额 (wallet.Available)
+func (dc *DataCache) GetAvailable(currency string) float64 {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.available[strings.ToUpper(currency)]
 }
 
 // GetOffers 获取缓存的 offers
@@ -288,12 +305,23 @@ func (dc *DataCache) GetAllEarnings() map[string]EarningsData {
 	return result
 }
 
-// GetAllBalances 获取所有余额
+// GetAllBalances 获取所有总余额
 func (dc *DataCache) GetAllBalances() map[string]float64 {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
 	result := make(map[string]float64)
 	for k, v := range dc.balances {
+		result[k] = v
+	}
+	return result
+}
+
+// GetAllAvailable 获取所有可用余额
+func (dc *DataCache) GetAllAvailable() map[string]float64 {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	result := make(map[string]float64)
+	for k, v := range dc.available {
 		result[k] = v
 	}
 	return result

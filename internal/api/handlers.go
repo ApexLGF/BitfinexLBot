@@ -67,7 +67,8 @@ func (h *Handler) GetStatus(c *gin.Context) {
 func (h *Handler) getSingleCurrencyStatus(c *gin.Context, currency string) {
 	upperCurrency := strings.ToUpper(currency)
 
-	availableFunds := h.cache.GetBalance(upperCurrency)
+	availableFunds := h.cache.GetAvailable(upperCurrency)
+	totalFunds := h.cache.GetBalance(upperCurrency)
 	offers := h.cache.GetOffers(upperCurrency)
 	activeOffers := len(offers)
 
@@ -83,6 +84,7 @@ func (h *Handler) getSingleCurrencyStatus(c *gin.Context, currency string) {
 		TotalEarnings:  totalEarnings,
 		ActiveOffers:   activeOffers,
 		AvailableFunds: availableFunds,
+		TotalFunds:     totalFunds,
 		Currency:       currency,
 	}
 
@@ -97,15 +99,17 @@ func (h *Handler) getAllCurrenciesStatus(c *gin.Context) {
 	currencies := h.currencyManager.GetEnabledCurrencies()
 	statuses := make(map[string]BotStatus)
 
-	var totalEarnings, totalAvailableFunds float64
+	var totalEarnings, totalAvailableFunds, totalFundsAll float64
 	var totalActiveOffers int
 
 	allBalances := h.cache.GetAllBalances()
+	allAvailable := h.cache.GetAllAvailable()
 	allOffers := h.cache.GetAllOffers()
 	allEarnings := h.cache.GetAllEarnings()
 
 	for _, cur := range currencies {
 		upper := strings.ToUpper(cur)
+		available := allAvailable[upper]
 		balance := allBalances[upper]
 		offers := allOffers[upper]
 		earnings := allEarnings[upper]
@@ -116,13 +120,15 @@ func (h *Handler) getAllCurrenciesStatus(c *gin.Context) {
 			NextRun:        h.nextRun,
 			TotalEarnings:  earnings.Monthly,
 			ActiveOffers:   len(offers),
-			AvailableFunds: balance,
+			AvailableFunds: available,
+			TotalFunds:     balance,
 			Currency:       cur,
 		}
 
 		totalEarnings += earnings.Monthly
 		totalActiveOffers += len(offers)
-		totalAvailableFunds += balance
+		totalAvailableFunds += available
+		totalFundsAll += balance
 	}
 
 	response := map[string]interface{}{
@@ -131,6 +137,7 @@ func (h *Handler) getAllCurrenciesStatus(c *gin.Context) {
 			"total_earnings":        totalEarnings,
 			"total_active_offers":   totalActiveOffers,
 			"total_available_funds": totalAvailableFunds,
+			"total_funds":          totalFundsAll,
 			"enabled_currencies":    currencies,
 		},
 		"is_running":  h.isRunning,
